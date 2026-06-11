@@ -1,6 +1,6 @@
 {
   "name": "swingscanner",
-  "version": "1.1.0",
+  "version": "1.1.1",
   "description": "Local-first swing trading scanner, setup coach, and trading journal.",
   "author": "SwingScanner",
   "repository": {
@@ -17,9 +17,9 @@
     "icons:desktop": "node scripts/generate-desktop-icons.cjs",
     "desktop:prepare": "npm run icons:desktop && npm run build:web && node scripts/prepare-standalone.cjs",
     "desktop:dev": "node scripts/desktop-dev.cjs",
-    "desktop:pack": "npm run desktop:prepare && electron-builder --dir --config electron-builder.config.cjs",
-    "desktop:win": "npm run desktop:prepare && electron-builder --win nsis --x64 --config electron-builder.config.cjs",
-    "desktop:mac": "npm run desktop:prepare && electron-builder --mac dmg zip --x64 --arm64 --config electron-builder.config.cjs",
+    "desktop:pack": "npm run desktop:prepare && electron-builder --dir --publish never --config electron-builder.config.cjs",
+    "desktop:win": "npm run desktop:prepare && electron-builder --win nsis --x64 --publish never --config electron-builder.config.cjs",
+    "desktop:mac": "npm run desktop:prepare && electron-builder --mac dmg zip --x64 --arm64 --publish never --config electron-builder.config.cjs",
     "desktop:publish": "npm run desktop:prepare && electron-builder --win nsis --x64 --publish always --config electron-builder.config.cjs",
     "lint": "eslint",
     "typecheck": "tsc --noEmit",

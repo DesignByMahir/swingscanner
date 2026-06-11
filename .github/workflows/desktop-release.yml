@@ -23,7 +23,7 @@ jobs:
         env:
           NEXT_PUBLIC_SUPABASE_URL: ${{ vars.NEXT_PUBLIC_SUPABASE_URL }}
           NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ vars.NEXT_PUBLIC_SUPABASE_ANON_KEY }}
-      - run: npx electron-builder --win nsis --x64 --config electron-builder.config.cjs
+      - run: npx electron-builder --win nsis --x64 --publish never --config electron-builder.config.cjs
       - uses: actions/upload-artifact@v4
         with:
           name: swingscanner-windows
@@ -45,7 +45,7 @@ jobs:
         env:
           NEXT_PUBLIC_SUPABASE_URL: ${{ vars.NEXT_PUBLIC_SUPABASE_URL }}
           NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ vars.NEXT_PUBLIC_SUPABASE_ANON_KEY }}
-      - run: npx electron-builder --mac dmg zip --x64 --arm64 --config electron-builder.config.cjs
+      - run: npx electron-builder --mac dmg zip --x64 --arm64 --publish never --config electron-builder.config.cjs
         env:
           CSC_IDENTITY_AUTO_DISCOVERY: "false"
       - uses: actions/upload-artifact@v4
