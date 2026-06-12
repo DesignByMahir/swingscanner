@@ -2,7 +2,6 @@ import { promises as fs } from "node:fs";
 import path from "node:path";
 import { z } from "zod";
 import type { JournalTrade } from "@/types/domain";
-import { getAccountDataDir } from "@/lib/local-account-store";
 
 export const journalTradeSchema = z.object({
   id: z.string().min(1).max(100),
@@ -32,13 +31,11 @@ export const journalTradeSchema = z.object({
 export const journalTradesSchema = z.array(journalTradeSchema).max(10_000);
 
 const dataDir = process.env.SWINGSCANNER_DATA_DIR ?? path.resolve(".data");
-function journalPath(accountId?: string | null) {
-  return path.join(accountId ? getAccountDataDir(accountId) : dataDir, "journal.json");
-}
+const journalPath = path.join(dataDir, "journal.json");
 
-export async function readJournal(accountId?: string | null): Promise<JournalTrade[]> {
+export async function readJournal(): Promise<JournalTrade[]> {
   try {
-    const parsed = JSON.parse(await fs.readFile(journalPath(accountId), "utf8"));
+    const parsed = JSON.parse(await fs.readFile(journalPath, "utf8"));
     return journalTradesSchema.parse(parsed);
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code === "ENOENT") return [];
@@ -46,11 +43,10 @@ export async function readJournal(accountId?: string | null): Promise<JournalTra
   }
 }
 
-export async function writeJournal(trades: JournalTrade[], accountId?: string | null) {
+export async function writeJournal(trades: JournalTrade[]) {
   const validated = journalTradesSchema.parse(trades);
-  const target = journalPath(accountId);
-  await fs.mkdir(path.dirname(target), { recursive: true });
-  const temporaryPath = `${target}.tmp`;
+  await fs.mkdir(dataDir, { recursive: true });
+  const temporaryPath = `${journalPath}.tmp`;
   await fs.writeFile(temporaryPath, JSON.stringify(validated, null, 2), "utf8");
-  await fs.rename(temporaryPath, target);
+  await fs.rename(temporaryPath, journalPath);
 }

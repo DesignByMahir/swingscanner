@@ -307,6 +307,7 @@ export function JournalDashboard() {
   const [nextDayLesson, setNextDayLesson] = useState("");
   const [loaded, setLoaded] = useState(false);
   const [dialogOpen, setDialogOpen] = useState(false);
+  const [cloudHydratedFor, setCloudHydratedFor] = useState<string | null>(null);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -320,7 +321,19 @@ export function JournalDashboard() {
       })
       .finally(() => setLoaded(true));
     return () => controller.abort();
-  }, [account.userId]);
+  }, []);
+
+  useEffect(() => {
+    if (!loaded || !account.userId || !account.stateLoaded || cloudHydratedFor === account.userId) return;
+    const timer = window.setTimeout(() => {
+      if (account.cloud.journal.length) setTrades(account.cloud.journal);
+      else if (trades.length) void account.saveJournal(trades);
+      if (account.cloud.reflections.length) setReflections(account.cloud.reflections);
+      else if (reflections.length) void account.saveReflections(reflections);
+      setCloudHydratedFor(account.userId);
+    }, 0);
+    return () => window.clearTimeout(timer);
+  }, [account, cloudHydratedFor, loaded, reflections, trades]);
 
   const persist = async (next: JournalTrade[]) => {
     const previous = trades;
@@ -331,6 +344,7 @@ export function JournalDashboard() {
       body: JSON.stringify(next),
     });
     if (!response.ok) setTrades(previous);
+    else if (account.userId) await account.saveJournal(next);
   };
   const addTrade = (trade: JournalTrade) => {
     void persist([trade, ...trades]);
@@ -358,6 +372,7 @@ export function JournalDashboard() {
     });
     if (response.ok) {
       setReflections(next);
+      if (account.userId) await account.saveReflections(next);
       window.dispatchEvent(new Event("swingscanner-reflections-updated"));
     }
   };
