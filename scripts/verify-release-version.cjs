@@ -5,8 +5,9 @@ const packageJson = JSON.parse(
   fs.readFileSync(path.join(__dirname, "..", "package.json"), "utf8"),
 );
 const releaseTag = process.env.GITHUB_REF_NAME;
+const refType = process.env.GITHUB_REF_TYPE;
 
-if (!releaseTag) {
+if (!releaseTag || refType !== "tag") {
   console.log(`[release] package version is ${packageJson.version}`);
   process.exit(0);
 }
