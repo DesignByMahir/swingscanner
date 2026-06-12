@@ -1,6 +1,7 @@
 import { getCached } from "@/lib/data/cache";
 import { ProviderRouter } from "@/lib/data/provider-router";
 import { ema } from "@/lib/scan/indicators";
+import { normalizeScanResult } from "@/lib/scan/normalize-scan";
 import type { DailyCandle, FreeScanResult, StockSetup } from "@/types/domain";
 
 export interface SetupChartCandle extends DailyCandle {
@@ -29,8 +30,9 @@ function emaSeries(values: number[], period: number) {
 
 export async function getSetupDetail(ticker: string): Promise<SetupDetail | null> {
   const scan = await getCached<FreeScanResult>("scan:free-eod:latest", true);
+  const normalizedScan = scan ? normalizeScanResult(scan.value) : null;
   const normalizedTicker = ticker.toUpperCase();
-  const scannedSetup = scan?.value.topSetups.find(
+  const scannedSetup = normalizedScan?.topSetups.find(
     (item) => item.ticker === normalizedTicker,
   );
   const researched = scannedSetup
@@ -69,7 +71,7 @@ export async function getSetupDetail(ticker: string): Promise<SetupDetail | null
     setup,
     candles,
     thesis,
-    marketDate: scan?.value.marketDate ?? researched!.value.marketDate,
-    scanTimestamp: scan?.value.scanTimestamp ?? researched!.value.scanTimestamp,
+    marketDate: normalizedScan?.marketDate ?? researched!.value.marketDate,
+    scanTimestamp: normalizedScan?.scanTimestamp ?? researched!.value.scanTimestamp,
   };
 }
