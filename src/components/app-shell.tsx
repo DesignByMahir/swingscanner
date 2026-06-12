@@ -48,7 +48,7 @@ const navItems = [
   { href: "/journal", label: "Trading Journal", icon: BookOpenText },
 ];
 
-type ViewerTheme = "modern" | "retro" | "flux" | "chroma" | "pastel";
+type ViewerTheme = "modern" | "retro" | "flux" | "chroma" | "pastel" | "romantic";
 type ChromaColor = "purple" | "orange" | "red" | "green" | "blue";
 
 const chromaColors: Array<{ id: ChromaColor; label: string }> = [
@@ -122,7 +122,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     const saved = document.documentElement.dataset.theme;
-    const current: ViewerTheme = saved === "retro" || saved === "flux" || saved === "chroma" || saved === "pastel" ? saved : "modern";
+    const current: ViewerTheme = saved === "retro" || saved === "flux" || saved === "chroma" || saved === "pastel" || saved === "romantic" ? saved : "modern";
     const savedChroma = document.documentElement.dataset.chroma;
     const currentChroma: ChromaColor = savedChroma === "orange" || savedChroma === "red" || savedChroma === "green" || savedChroma === "blue" ? savedChroma : "purple";
     const timer = window.setTimeout(() => {
@@ -219,7 +219,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                 </>
               )}
             </div>
-            <div className="grid gap-3 p-5 sm:grid-cols-3 lg:grid-cols-5">
+            <div className="grid gap-3 p-5 sm:grid-cols-2 lg:grid-cols-3">
               <button
                 type="button"
                 className={cn("theme-choice theme-choice-modern text-left", theme === "modern" && "theme-choice-active")}
@@ -294,6 +294,20 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                     <span className="mt-1 block text-[11px] text-muted-foreground">Black with vivid soft color</span>
                   </span>
                   {theme === "pastel" && <Check className="text-primary" size={18} weight="bold" />}
+                </span>
+              </button>
+              <button
+                type="button"
+                className={cn("theme-choice theme-choice-romantic text-left", theme === "romantic" && "theme-choice-active")}
+                onClick={() => selectTheme("romantic")}
+              >
+                <span className="theme-preview theme-preview-romantic" aria-hidden="true"><span /><span /><span /></span>
+                <span className="mt-3 flex items-center justify-between">
+                  <span>
+                    <strong className="block text-sm font-semibold">Romantic</strong>
+                    <span className="mt-1 block text-[11px] text-muted-foreground">Classical painting and parchment</span>
+                  </span>
+                  {theme === "romantic" && <Check className="text-primary" size={18} weight="bold" />}
                 </span>
               </button>
             </div>

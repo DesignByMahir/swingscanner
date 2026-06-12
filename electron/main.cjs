@@ -18,7 +18,7 @@ let serverProcess;
 let serverUrl;
 let updateState = {
   status: app.isPackaged ? "idle" : "desktop-only",
-  message: app.isPackaged ? "Check for updates" : "Desktop updates only",
+  message: app.isPackaged ? "Check & download update" : "Desktop updates only",
   progress: null,
   version: null,
   releaseNotes: null,

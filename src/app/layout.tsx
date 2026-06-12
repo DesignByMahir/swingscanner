@@ -38,7 +38,7 @@ export default function RootLayout({ children }: Readonly<{ children: React.Reac
             __html: `
               try {
                 const saved = localStorage.getItem("swingscanner-theme");
-                const theme = ["retro", "flux", "chroma", "pastel"].includes(saved) ? saved : "modern";
+                const theme = ["retro", "flux", "chroma", "pastel", "romantic"].includes(saved) ? saved : "modern";
                 document.documentElement.dataset.theme = theme;
                 const chroma = localStorage.getItem("swingscanner-chroma");
                 document.documentElement.dataset.chroma = ["purple", "orange", "red", "green", "blue"].includes(chroma) ? chroma : "purple";

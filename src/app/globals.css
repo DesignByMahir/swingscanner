@@ -229,6 +229,44 @@
   --chart-trendline: #f08abf;
 }
 
+[data-theme="romantic"] {
+  --background: #e8deca;
+  --foreground: #30261f;
+  --card: rgba(250, 244, 230, 0.78);
+  --card-foreground: #30261f;
+  --popover: rgba(250, 246, 236, 0.97);
+  --popover-foreground: #30261f;
+  --primary: #884657;
+  --primary-foreground: #fffaf0;
+  --secondary: rgba(239, 225, 201, 0.78);
+  --secondary-foreground: #49372c;
+  --muted: rgba(235, 221, 198, 0.72);
+  --muted-foreground: #746355;
+  --accent: rgba(153, 111, 78, 0.16);
+  --accent-foreground: #713c4b;
+  --destructive: #a14646;
+  --border: rgba(94, 69, 49, 0.22);
+  --input: rgba(255, 250, 239, 0.68);
+  --ring: #884657;
+  --positive: #4f765d;
+  --warning: #9a6b2f;
+  --negative: #a14646;
+  --chart-bg: #171515;
+  --chart-grid: #39302c;
+  --chart-label: #c1b3a4;
+  --chart-up: #8aa0b2;
+  --chart-down: #a96572;
+  --chart-ema-fast: #d1b06d;
+  --chart-ema-mid: #a86b78;
+  --chart-ema-slow: #75909f;
+  --chart-target: #7da287;
+  --chart-breakout: #d1b06d;
+  --chart-base: #978a7e;
+  --chart-trendline: #c5939f;
+  --chart-drawing: #f6ecda;
+  --radius: 0.65rem;
+}
+
 @layer base {
   * {
     @apply border-border outline-ring/50;
@@ -498,6 +536,19 @@
   .theme-preview-pastel > span:nth-child(1) { background: #4be281; }
   .theme-preview-pastel > span:nth-child(2) { background: #f2df36; }
   .theme-preview-pastel > span:nth-child(3) { background: linear-gradient(135deg, #f071b2, #629eff); }
+  .theme-preview-romantic {
+    background:
+      linear-gradient(rgba(247,237,216,.16), rgba(231,214,186,.3)),
+      url("/images/romantic-classical-bg.png") center / cover;
+  }
+  .theme-preview-romantic > span {
+    border: 1px solid rgba(92,65,44,.28);
+    background: rgba(250,241,222,.66);
+    box-shadow: inset 0 1px 0 rgba(255,255,255,.62);
+  }
+  .theme-preview-romantic > span:nth-child(2) {
+    background: rgba(136,70,87,.3);
+  }
   .chroma-rail {
     border: 1px solid var(--border);
     background: color-mix(in srgb, var(--card) 72%, transparent);
@@ -1042,6 +1093,154 @@
   [data-theme="pastel"] .scanner-results-table thead th:nth-child(2) { background: #070707; }
   [data-theme="pastel"] .scanner-results-table tbody tr:hover td:nth-child(1),
   [data-theme="pastel"] .scanner-results-table tbody tr:hover td:nth-child(2) { background: #151018; }
+
+  [data-theme="romantic"] .app-frame {
+    background: #e8deca;
+  }
+  [data-theme="romantic"] .app-atmosphere {
+    background-image:
+      linear-gradient(180deg, rgba(246,237,219,.58) 0%, rgba(240,229,207,.67) 38%, rgba(232,220,197,.88) 82%, rgba(230,217,193,.96) 100%),
+      linear-gradient(90deg, rgba(246,238,223,.48), rgba(239,225,204,.2) 50%, rgba(235,219,195,.42)),
+      url("/images/romantic-classical-bg.png");
+    background-position: center top;
+    background-repeat: no-repeat;
+    background-size: cover;
+    opacity: 1;
+    filter: none;
+  }
+  [data-theme="romantic"] .app-atmosphere::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    background:
+      radial-gradient(ellipse 46% 30% at 76% 8%, rgba(136,70,87,.09), transparent 70%),
+      radial-gradient(ellipse 38% 28% at 18% 18%, rgba(196,157,104,.12), transparent 72%);
+  }
+  [data-theme="romantic"] .app-atmosphere::after {
+    display: block;
+    background-image:
+      linear-gradient(rgba(78,55,39,.022) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(78,55,39,.022) 1px, transparent 1px);
+    background-size: 52px 52px;
+    mask-image: linear-gradient(to bottom, black, transparent 72%);
+  }
+  [data-theme="romantic"] h1,
+  [data-theme="romantic"] h2,
+  [data-theme="romantic"] h3,
+  [data-theme="romantic"] .font-editorial,
+  [data-theme="romantic"] .nav-item,
+  [data-theme="romantic"] .settings-button {
+    font-family: var(--font-editorial), "Times New Roman", serif;
+  }
+  [data-theme="romantic"] h1,
+  [data-theme="romantic"] .font-editorial {
+    font-weight: 600;
+    letter-spacing: -.035em;
+  }
+  [data-theme="romantic"] h2,
+  [data-theme="romantic"] h3 {
+    letter-spacing: -.018em;
+  }
+  [data-theme="romantic"] .panel {
+    border-color: rgba(102,73,52,.22);
+    border-radius: .78rem;
+    background:
+      linear-gradient(135deg, rgba(255,250,238,.84), rgba(243,231,209,.69)),
+      rgba(249,241,225,.72);
+    box-shadow: inset 0 1px 0 rgba(255,255,255,.72), 0 18px 44px rgba(83,59,42,.09);
+    backdrop-filter: blur(20px) saturate(96%);
+  }
+  [data-theme="romantic"] .panel::before {
+    display: block;
+    background:
+      linear-gradient(115deg, rgba(255,255,255,.2), transparent 34%),
+      linear-gradient(90deg, rgba(136,70,87,.025), transparent 18%);
+  }
+  [data-theme="romantic"] .glass-strong,
+  [data-theme="romantic"] .glass-header {
+    border-color: rgba(102,73,52,.24);
+    background: linear-gradient(145deg, rgba(250,244,230,.88), rgba(237,222,198,.72));
+    box-shadow: inset 0 1px 0 rgba(255,255,255,.74), 0 24px 64px rgba(75,52,36,.11);
+    backdrop-filter: blur(25px) saturate(94%);
+  }
+  [data-theme="romantic"] .glass-header {
+    background: linear-gradient(110deg, rgba(250,244,230,.86), rgba(235,217,190,.67));
+  }
+  [data-theme="romantic"] .brand-mark {
+    border-color: rgba(136,70,87,.3);
+    border-radius: 50%;
+    background: rgba(136,70,87,.1);
+    box-shadow: inset 0 1px 0 rgba(255,255,255,.65);
+  }
+  [data-theme="romantic"] .runtime-card,
+  [data-theme="romantic"] .data-pill {
+    border-color: rgba(102,73,52,.2);
+    background: rgba(250,243,228,.62);
+    box-shadow: inset 0 1px 0 rgba(255,255,255,.58);
+  }
+  [data-theme="romantic"] .nav-item {
+    font-size: .9rem;
+    letter-spacing: .005em;
+  }
+  [data-theme="romantic"] .nav-item:hover {
+    background: rgba(136,70,87,.07);
+  }
+  [data-theme="romantic"] .nav-item-active {
+    border-color: rgba(136,70,87,.28);
+    background: linear-gradient(90deg, rgba(136,70,87,.14), rgba(255,250,238,.35));
+    box-shadow: inset 3px 0 0 rgba(136,70,87,.55);
+  }
+  [data-theme="romantic"] .scan-button {
+    border-color: rgba(100,57,67,.42);
+    background: linear-gradient(135deg, #9b5a68, #743a4b);
+    color: #fffaf0;
+    box-shadow: inset 0 1px 0 rgba(255,255,255,.24);
+  }
+  [data-theme="romantic"] .page-heading::after {
+    background: linear-gradient(90deg, #884657, rgba(177,137,83,.52) 42%, transparent 84%);
+  }
+  [data-theme="romantic"] .glass-mobile-nav,
+  [data-theme="romantic"] .scan-status-panel,
+  [data-theme="romantic"] .scan-metadata {
+    border-color: rgba(102,73,52,.22);
+    background: rgba(250,244,230,.82);
+    color: #564439;
+    box-shadow: inset 0 1px 0 rgba(255,255,255,.62);
+    backdrop-filter: blur(18px);
+  }
+  [data-theme="romantic"] [data-slot="input"],
+  [data-theme="romantic"] [data-slot="select-trigger"],
+  [data-theme="romantic"] [data-slot="textarea"],
+  [data-theme="romantic"] [data-slot="button"][data-variant="outline"],
+  [data-theme="romantic"] [data-slot="button"][data-variant="secondary"] {
+    border-color: rgba(102,73,52,.22);
+    background: rgba(255,250,239,.68);
+    box-shadow: inset 0 1px 0 rgba(255,255,255,.62);
+    color: var(--foreground);
+  }
+  [data-theme="romantic"] [data-slot="table-header"] {
+    background: rgba(232,216,190,.88);
+  }
+  [data-theme="romantic"] [data-slot="table-row"] {
+    border-color: rgba(102,73,52,.16);
+  }
+  [data-theme="romantic"] [data-slot="table-row"]:hover {
+    background: rgba(136,70,87,.055);
+  }
+  [data-theme="romantic"] .scanner-results-table th:nth-child(1),
+  [data-theme="romantic"] .scanner-results-table td:nth-child(1),
+  [data-theme="romantic"] .scanner-results-table th:nth-child(2),
+  [data-theme="romantic"] .scanner-results-table td:nth-child(2) {
+    background: rgba(248,239,222,.97);
+  }
+  [data-theme="romantic"] .scanner-results-table thead th:nth-child(1),
+  [data-theme="romantic"] .scanner-results-table thead th:nth-child(2) {
+    background: rgba(232,216,190,.98);
+  }
+  [data-theme="romantic"] .scanner-results-table tbody tr:hover td:nth-child(1),
+  [data-theme="romantic"] .scanner-results-table tbody tr:hover td:nth-child(2) {
+    background: rgba(239,222,201,.99);
+  }
 
   .route-motion .panel {
     transform-origin: 50% 100%;
