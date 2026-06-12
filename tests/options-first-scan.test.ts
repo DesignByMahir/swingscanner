@@ -1,7 +1,8 @@
 import { describe, expect, it } from "vitest";
 import { findBaseBuilder, passesOptionsGate } from "../src/lib/scan/options-first";
+import { selectSectorBalancedCandidates } from "../src/lib/scan/sector-selection";
 import { findHorizontalResistance, setupGeometry } from "../src/lib/scan/setup-geometry";
-import type { DailyCandle, ScannerRules, StockSetup } from "../src/types/domain";
+import type { DailyCandle, ScannerRules, SectorLeadership, StockSetup } from "../src/types/domain";
 
 const rules: ScannerRules = {
   maxWatchlistItems: 7,
@@ -29,6 +30,41 @@ function candle(index: number, high: number, low: number, close: number, volume:
 }
 
 describe("options-first base scanner", () => {
+  it("reserves scanner space for each leading sector before global score filling", () => {
+    const leadership = [
+      { rank: 1, ticker: "XLP", sector: "Consumer Staples", isLeading: true },
+      { rank: 2, ticker: "XLI", sector: "Industrials", isLeading: true },
+      { rank: 3, ticker: "XLRE", sector: "Real Estate", isLeading: true },
+      { rank: 4, ticker: "XLF", sector: "Financials", isLeading: false },
+    ].map((sector) => ({
+      ...sector,
+      score: 70,
+      change20d: 2,
+      change63d: 4,
+      relative20d: 1,
+      relative63d: 1,
+      above21Day: true,
+      above50Day: true,
+    })) as SectorLeadership[];
+    const setup = (ticker: string, sectorTicker: string, finalScore: number) => ({
+      ticker,
+      sectorTicker,
+      finalScore,
+      rs: finalScore,
+    }) as unknown as StockSetup;
+    const candidates = [
+      ...Array.from({ length: 10 }, (_, index) => setup(`TECH${index}`, "XLF", 99 - index)),
+      setup("STAPLE", "XLP", 72),
+      setup("INDUSTRIAL", "XLI", 71),
+      setup("REIT", "XLRE", 70),
+    ];
+
+    const selected = selectSectorBalancedCandidates(candidates, leadership, 6, 1, 0);
+
+    expect(selected.map((stock) => stock.ticker)).toEqual(expect.arrayContaining(["STAPLE", "INDUSTRIAL", "REIT"]));
+    expect(selected).toHaveLength(6);
+  });
+
   it("detects a contained four-day-plus base with tightening price and volume", () => {
     const history = Array.from({ length: 220 }, (_, index) => candle(index % 28, 101.5, 98.5, 100, 1_000_000));
     const base = [

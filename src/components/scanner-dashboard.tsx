@@ -97,7 +97,27 @@ export function ScannerDashboard() {
       )}
 
       {scan ? (
-        <ScannerTable setups={scan.topSetups} />
+        <>
+          {!!scan.sectorLeadership?.length && (
+            <div className="panel mb-4 grid overflow-hidden sm:grid-cols-2 xl:grid-cols-6">
+              {scan.sectorLeadership.slice(0, 6).map((sector) => (
+                <div key={sector.ticker} className="border-b border-r p-4 last:border-r-0 sm:[&:nth-last-child(-n+2)]:border-b-0 xl:border-b-0">
+                  <p className="font-mono text-[9px] uppercase tracking-[0.14em] text-primary">
+                    #{sector.rank} {sector.ticker}
+                  </p>
+                  <p className="mt-2 text-sm font-medium">{sector.sector}</p>
+                  <p className="mt-1 text-[10px] text-muted-foreground">
+                    Strength {sector.score} | {sector.relative20d >= 0 ? "+" : ""}{sector.relative20d.toFixed(1)}% vs SPY
+                  </p>
+                </div>
+              ))}
+            </div>
+          )}
+          <ScannerTable
+            setups={scan.topSetups}
+            sectorLeadership={scan.sectorLeadership}
+          />
+        </>
       ) : (
         <div className="panel grid min-h-72 place-items-center p-8 text-center">
           <div>

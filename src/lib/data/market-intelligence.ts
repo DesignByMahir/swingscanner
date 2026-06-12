@@ -10,27 +10,13 @@ import type {
 import { changePercent, sma } from "@/lib/scan/indicators";
 import { getCached, setCached } from "./cache";
 import { ProviderRouter } from "./provider-router";
-import { SECTOR_ETFS } from "./sector-theme-map";
+import { SECTOR_ETFS, SECTOR_NAMES } from "./sector-theme-map";
 
 const yahooFinance = new YahooFinance();
 const CACHE_KEY = "market:intelligence:latest";
 const CACHE_TTL_MS = 30 * 60 * 1000;
 const HIGH_IMPACT_RELEASES = /consumer price index|employment situation|producer price index|personal income|gross domestic product|fomc|federal reserve/i;
 const MARKET_MOVING_NEWS = /stock market|stocks|s&p|nasdaq|dow|federal reserve|fed\b|interest rate|inflation|cpi|jobs report|employment|gdp|treasury|bond yield|oil|energy|war|conflict|iran|israel|ukraine|sanction|shipping|tariff|recession|economy|economic/i;
-
-const sectorNames: Record<(typeof SECTOR_ETFS)[number], string> = {
-  XLB: "Materials",
-  XLC: "Communication Services",
-  XLE: "Energy",
-  XLF: "Financials",
-  XLI: "Industrials",
-  XLK: "Technology",
-  XLP: "Consumer Staples",
-  XLRE: "Real Estate",
-  XLU: "Utilities",
-  XLV: "Healthcare",
-  XLY: "Consumer Discretionary",
-};
 
 function round(value: number, decimals = 2) {
   const multiplier = 10 ** decimals;
@@ -55,6 +41,14 @@ function setupContext(setups: StockSetup[], watchlist: StockSetup[], sectorTicke
     averageSetupScore: matching.length
       ? round(matching.reduce((sum, setup) => sum + setup.finalScore, 0) / matching.length, 1)
       : null,
+    topSetups: matching
+      .sort((left, right) => right.finalScore - left.finalScore)
+      .slice(0, 3)
+      .map((setup) => ({
+        ticker: setup.ticker,
+        setup: setup.setup,
+        score: setup.finalScore,
+      })),
   };
 }
 
@@ -189,7 +183,7 @@ async function buildMarketIntelligence(): Promise<MarketIntelligence> {
     sectors.push({
       rank: 0,
       ticker,
-      sector: sectorNames[ticker],
+      sector: SECTOR_NAMES[ticker],
       price: round(price),
       change1d: round(changePercent(closes, 1)),
       change5d: round(changePercent(closes, 5)),

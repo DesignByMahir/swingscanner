@@ -50,6 +50,7 @@ export interface StockSetup {
   company: string;
   sector: string;
   sectorTicker: string;
+  sectorRank?: number;
   theme: string;
   themeSlug: string;
   price: number;
@@ -158,8 +159,23 @@ export interface FreeScanResult {
   failedCount: number;
   failures: Array<{ symbol: string; reason: string }>;
   providerStats: ProviderStats;
+  sectorLeadership?: SectorLeadership[];
   topSetups: StockSetup[];
   watchlist: StockSetup[];
+}
+
+export interface SectorLeadership {
+  rank: number;
+  ticker: string;
+  sector: string;
+  score: number;
+  change20d: number;
+  change63d: number;
+  relative20d: number;
+  relative63d: number;
+  above21Day: boolean;
+  above50Day: boolean;
+  isLeading: boolean;
 }
 
 export interface TickerResearchResult {
@@ -206,6 +222,11 @@ export interface SectorPerformance {
   watchlistCount: number;
   actionableCount: number;
   averageSetupScore: number | null;
+  topSetups: Array<{
+    ticker: string;
+    setup: SetupType;
+    score: number;
+  }>;
 }
 
 export interface MarketNewsItem {

@@ -3,7 +3,7 @@
 import { useMemo, useState } from "react";
 import { CaretDown, CaretUp, DownloadSimple, Funnel, MagnifyingGlass, Star } from "@phosphor-icons/react";
 import Link from "next/link";
-import type { StockSetup } from "@/types/domain";
+import type { SectorLeadership, StockSetup } from "@/types/domain";
 import { compact, money, percent } from "@/lib/format";
 import { ScoreBadge, StatusBadge } from "@/components/shared";
 import { Button } from "@/components/ui/button";
@@ -11,6 +11,7 @@ import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
 import { useSwingAccount } from "@/components/account-provider";
+import { ALL_SECTORS } from "@/lib/data/sector-catalog";
 
 type SortKey = "rank" | "ticker" | "setup" | "sector" | "options" | "price" | "adr" | "relativeVolume" | "rs" | "emaDistance" | "extension" | "tightening" | "score" | "status";
 type SortDirection = "desc" | "asc";
@@ -67,7 +68,13 @@ function SortHeader({
   );
 }
 
-export function ScannerTable({ setups }: { setups: StockSetup[] }) {
+export function ScannerTable({
+  setups,
+  sectorLeadership = [],
+}: {
+  setups: StockSetup[];
+  sectorLeadership?: SectorLeadership[];
+}) {
   const account = useSwingAccount();
   const [localFlags, setLocalFlags] = useState<string[]>(() => {
     if (typeof window === "undefined") return [];
@@ -82,6 +89,23 @@ export function ScannerTable({ setups }: { setups: StockSetup[] }) {
   const [ivBand, setIvBand] = useState("all");
   const [showRejected, setShowRejected] = useState(false);
   const [sort, setSort] = useState<{ key: SortKey; direction: SortDirection } | null>(null);
+  const sectorOptions = useMemo(() => {
+    const ranks = new Map(
+      sectorLeadership.map((item) => [item.sector, item.rank]),
+    );
+    const counts = new Map<string, number>();
+    setups.forEach((stock) => counts.set(stock.sector, (counts.get(stock.sector) ?? 0) + 1));
+    return ALL_SECTORS
+      .map((item) => ({
+        ...item,
+        rank: ranks.get(item.sector),
+        count: counts.get(item.sector) ?? 0,
+      }))
+      .sort((left, right) =>
+        (left.rank ?? 99) - (right.rank ?? 99) ||
+        left.sector.localeCompare(right.sector),
+      );
+  }, [sectorLeadership, setups]);
 
   const flagged = account.userId ? account.cloud.flaggedTickers : localFlags;
   const toggleFlag = (ticker: string) => {
@@ -175,7 +199,12 @@ export function ScannerTable({ setups }: { setups: StockSetup[] }) {
             <SelectTrigger className="h-9 w-full"><SelectValue placeholder="Sector" /></SelectTrigger>
             <SelectContent>
               <SelectItem value="all">All sectors</SelectItem>
-              {[...new Set(setups.map((stock) => stock.sector))].sort().map((value) => <SelectItem key={value} value={value}>{value}</SelectItem>)}
+              {sectorOptions.map((item) => (
+                <SelectItem key={item.ticker} value={item.sector}>
+                  {item.rank && item.rank <= 6 ? `#${item.rank} ` : ""}
+                  {item.sector} ({item.count})
+                </SelectItem>
+              ))}
             </SelectContent>
           </Select>
           <label className="flex h-9 items-center gap-2 whitespace-nowrap rounded-md border px-3 text-xs text-muted-foreground">

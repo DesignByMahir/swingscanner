@@ -1,4 +1,5 @@
 import { withCache } from "./cache";
+export { ALL_SECTORS, SECTOR_ETFS, SECTOR_NAMES } from "./sector-catalog";
 
 export interface SectorMetadata {
   sector: string;
@@ -102,8 +103,6 @@ export async function getSectorMetadataMap() {
 export function getSectorTheme(symbol: string, company = symbol, metadata: Record<string, SectorMetadata> = {}) {
   return metadata[symbol] ?? normalize({ symbol, name: company });
 }
-
-export const SECTOR_ETFS = ["XLB", "XLC", "XLE", "XLF", "XLI", "XLK", "XLP", "XLRE", "XLU", "XLV", "XLY"] as const;
 
 export const LIQUID_SCAN_PRIORITY = [
   "SPY", "QQQ", "AAPL", "MSFT", "NVDA", "AMZN", "GOOGL", "META", "TSLA", "AVGO",

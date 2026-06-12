@@ -1,17 +1,18 @@
 import pLimit from "p-limit";
-import type { DailyCandle, FreeScanResult, ScannerRules, SetupType, StockSetup, UniverseSymbol } from "@/types/domain";
+import type { DailyCandle, FreeScanResult, ScannerRules, SectorLeadership, SetupType, StockSetup, UniverseSymbol } from "@/types/domain";
 import { scannerRules } from "@/lib/scanner-config";
 import { clamp, extensionLabel, gradeScore } from "@/lib/scoring";
 import { setCached, withCache } from "@/lib/data/cache";
 import { ProviderRouter } from "@/lib/data/provider-router";
 import { getNasdaqUniverse } from "@/lib/data/providers/nasdaq-universe-provider";
-import { getSectorMetadataMap, getSectorTheme, LIQUID_SCAN_PRIORITY, SECTOR_ETFS, type SectorMetadata } from "@/lib/data/sector-theme-map";
+import { getSectorMetadataMap, getSectorTheme, LIQUID_SCAN_PRIORITY, SECTOR_ETFS, SECTOR_NAMES, type SectorMetadata } from "@/lib/data/sector-theme-map";
 import {
   getOptionsConfluence,
   type OptionsConfluence,
 } from "@/lib/data/market-confluence-provider";
 import { adr, averageVolume, bollingerBandwidthPercentile, changePercent, distancePercent, ema, rsi } from "./indicators";
 import { findBaseBuilder, passesOptionsGate } from "./options-first";
+import { selectSectorBalancedCandidates } from "./sector-selection";
 import { setupGeometry } from "./setup-geometry";
 
 export interface FreeScanOptions {
@@ -157,6 +158,7 @@ export function analyzeSymbol(
   marketScore: number,
   sectorMetadata: Record<string, SectorMetadata>,
   sectorScores: Map<string, number>,
+  sectorRanks = new Map<string, number>(),
 ): StockSetup | null {
   if (candles.length < 205) return null;
   const closes = candles.map((bar) => bar.close);
@@ -170,7 +172,7 @@ export function analyzeSymbol(
   const relativeVolume = latest.volume / Math.max(avgVolume, 1);
   const rsi14 = rsi(closes, 14)!;
   const dollarVolume = latest.close * avgVolume;
-  if (latest.close <= 3 || avgVolume <= 350_000 || dollarVolume <= 8_000_000 || adrPct <= 2 || latest.close <= ema21Value * 0.97 || latest.close <= ema50Value * 0.98) return null;
+  if (latest.close <= 3 || avgVolume <= 350_000 || dollarVolume <= 8_000_000 || adrPct <= 1.5 || latest.close <= ema21Value * 0.97 || latest.close <= ema50Value * 0.98) return null;
   const matches = detectSetups(candles, adrPct, ema8Value, ema21Value);
   if (!matches.length) return null;
   const rsRaw = changePercent(closes, 63) - spyReturn63;
@@ -221,6 +223,7 @@ export function analyzeSymbol(
     company: symbol.name,
     sector,
     sectorTicker,
+    sectorRank: sectorRanks.get(sectorTicker),
     theme,
     themeSlug,
     price: Number(latest.close.toFixed(2)),
@@ -359,12 +362,48 @@ export async function runFreeDailyScan(options: FreeScanOptions = {}): Promise<F
   const spyReturn63 = changePercent(spyCloses, 63);
   const sectorMetadata = await getSectorMetadataMap();
   const sectorScores = new Map<string, number>();
-  await Promise.all(SECTOR_ETFS.map(async (ticker) => {
+  const spyReturn20 = changePercent(spyCloses, 20);
+  const sectorSnapshots = await Promise.all(SECTOR_ETFS.map(async (ticker) => {
     const result = await router.getDaily(ticker, 100);
-    if (!result.candles) return;
-    const sectorReturn63 = changePercent(result.candles.map((bar) => bar.close), 63);
-    sectorScores.set(ticker, clamp(50 + (sectorReturn63 - spyReturn63) * 3.2));
+    if (!result.candles) return null;
+    const closes = result.candles.map((bar) => bar.close);
+    const change20d = changePercent(closes, 20);
+    const change63d = changePercent(closes, 63);
+    const relative20d = change20d - spyReturn20;
+    const relative63d = change63d - spyReturn63;
+    const above21Day = closes.at(-1)! > ema(closes, 21)!;
+    const above50Day = closes.at(-1)! > ema(closes, 50)!;
+    const score = clamp(
+      50 +
+      relative20d * 4 +
+      relative63d * 1.5 +
+      Number(above21Day) * 8 +
+      Number(above50Day) * 6,
+    );
+    sectorScores.set(ticker, score);
+    return {
+      ticker,
+      sector: SECTOR_NAMES[ticker],
+      score: Math.round(score),
+      change20d: Number(change20d.toFixed(2)),
+      change63d: Number(change63d.toFixed(2)),
+      relative20d: Number(relative20d.toFixed(2)),
+      relative63d: Number(relative63d.toFixed(2)),
+      above21Day,
+      above50Day,
+    };
   }));
+  const sectorLeadership: SectorLeadership[] = sectorSnapshots
+    .filter((item): item is NonNullable<typeof item> => item !== null)
+    .sort((left, right) => right.score - left.score)
+    .map((sector, index) => ({
+      ...sector,
+      rank: index + 1,
+      isLeading: index < 6,
+    }));
+  const sectorRanks = new Map(
+    sectorLeadership.map((sector) => [sector.ticker, sector.rank]),
+  );
   const failures: Array<{ symbol: string; reason: string }> = [];
   const candidates: StockSetup[] = [];
   let passedBaseFilters = 0;
@@ -393,7 +432,15 @@ export async function runFreeDailyScan(options: FreeScanOptions = {}): Promise<F
         failures.push({ symbol: symbol.symbol, reason: "No valid detailed daily candle history" });
       } else {
         const candles = result.candles;
-        const analyzed = analyzeSymbol(symbol, candles, spyReturn63, marketScore, sectorMetadata, sectorScores);
+        const analyzed = analyzeSymbol(
+          symbol,
+          candles,
+          spyReturn63,
+          marketScore,
+          sectorMetadata,
+          sectorScores,
+          sectorRanks,
+        );
         if (analyzed) {
           passedBaseFilters += 1;
           candidates.push(analyzed);
@@ -403,18 +450,31 @@ export async function runFreeDailyScan(options: FreeScanOptions = {}): Promise<F
       failures.push({ symbol: symbol.symbol, reason: error instanceof Error ? error.message : "Unknown provider error" });
     }
   })));
-  const preliminary = candidates
-    .sort((a, b) => b.finalScore - a.finalScore || b.rs - a.rs)
-    .slice(0, rules.maxOptionsCandidates);
+  const preliminary = selectSectorBalancedCandidates(
+    candidates,
+    sectorLeadership,
+    rules.maxOptionsCandidates,
+    30,
+    12,
+  );
   const optionsLimit = pLimit(4);
   await Promise.all(preliminary.map((stock) => optionsLimit(async () => {
     const options = await getOptionsConfluence(stock.ticker, stock.plan.entryHigh);
     applyOptionsScoring(stock, options);
   })));
 
-  const topSetups = preliminary
-    .sort((a, b) => b.finalScore - a.finalScore || b.rs - a.rs)
-    .slice(0, rules.maxScannerResults)
+  const topSetups = selectSectorBalancedCandidates(
+    preliminary,
+    sectorLeadership,
+    rules.maxScannerResults,
+    5,
+    2,
+  )
+    .sort((left, right) =>
+      (left.sectorRank ?? 99) - (right.sectorRank ?? 99) ||
+      right.finalScore - left.finalScore ||
+      right.rs - left.rs,
+    )
     .map((stock, index) => ({
       ...stock,
       rank: index + 1,
@@ -457,6 +517,7 @@ export async function runFreeDailyScan(options: FreeScanOptions = {}): Promise<F
         "Options quality is ranked rather than used as a blanket exclusion; only the strongest overall candidates are shown.",
       ],
     },
+    sectorLeadership,
     topSetups,
     watchlist,
   };

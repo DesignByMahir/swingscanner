@@ -79,6 +79,22 @@ function SectorRow({ sector, timeframe }: { sector: SectorPerformance; timeframe
         <p className="mt-1 text-[10px] text-muted-foreground">
           {sector.watchlistCount} on watchlist{sector.averageSetupScore !== null ? ` | ${sector.averageSetupScore.toFixed(0)} avg score` : ""}
         </p>
+        {(sector.topSetups ?? []).length > 0 ? (
+          <div className="mt-2 flex flex-wrap gap-1.5">
+            {(sector.topSetups ?? []).map((setup) => (
+              <a
+                key={setup.ticker}
+                href={`https://www.tradingview.com/chart/?symbol=${encodeURIComponent(setup.ticker)}`}
+                target="_blank"
+                rel="noreferrer"
+                className="rounded border px-1.5 py-1 font-mono text-[9px] text-muted-foreground hover:border-primary/50 hover:text-primary"
+                title={`${setup.setup}, score ${setup.score}`}
+              >
+                {setup.ticker} · {setup.score}
+              </a>
+            ))}
+          </div>
+        ) : null}
       </div>
     </article>
   );
@@ -136,9 +152,12 @@ export function SectorPulseView() {
   }, [load]);
 
   const sectors = useMemo(
-    () => [...(data?.sectors ?? [])].sort((left, right) => right[timeframe] - left[timeframe]),
+    () => [...(data?.sectors ?? [])]
+      .sort((left, right) => right[timeframe] - left[timeframe])
+      .map((sector, index) => ({ ...sector, rank: index + 1 })),
     [data, timeframe],
   );
+  const topSixSectors = sectors.slice(0, 6);
   const news = useMemo(
     () => (data?.news ?? []).filter((item) => newsFilter === "all" || item.scope === newsFilter),
     [data, newsFilter],
@@ -182,7 +201,26 @@ export function SectorPulseView() {
         <div className="hidden grid-cols-[48px_minmax(190px,1.15fr)_minmax(130px,.7fr)_90px_110px_minmax(150px,.85fr)] gap-4 border-b bg-background/50 px-4 py-3 text-[9px] uppercase tracking-[0.14em] text-muted-foreground md:grid">
           <span>Rank</span><span>Sector</span><span>30-session trend</span><span>Return</span><span>Relative</span><span>Scanner confluence</span>
         </div>
-        {sectors.map((sector) => <SectorRow key={sector.ticker} sector={sector} timeframe={timeframe} />)}
+        {topSixSectors.map((sector) => <SectorRow key={sector.ticker} sector={sector} timeframe={timeframe} />)}
+      </section>
+
+      <section className="panel overflow-hidden">
+        <div className="border-b p-4">
+          <h2 className="font-medium">All sector coverage</h2>
+          <p className="mt-1 text-xs text-muted-foreground">Every S&amp;P sector remains visible even when it has no current qualifying setups.</p>
+        </div>
+        <div className="grid sm:grid-cols-2 xl:grid-cols-3">
+          {sectors.map((sector) => (
+            <article key={sector.ticker} className="flex items-center gap-3 border-b border-r p-4">
+              <span className="metric-number text-xs text-muted-foreground">#{sector.rank}</span>
+              <div className="min-w-0 flex-1">
+                <p className="truncate text-sm font-medium">{sector.sector}</p>
+                <p className="mt-1 font-mono text-[10px] text-muted-foreground">{sector.ticker} · {sector.scannerCount} setups</p>
+              </div>
+              <StatusBadge label={sector.signal} />
+            </article>
+          ))}
+        </div>
       </section>
 
       {(error || data?.warnings.length) ? (
