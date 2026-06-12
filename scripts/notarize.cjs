@@ -3,6 +3,10 @@ const { notarize } = require("@electron/notarize");
 
 module.exports = async function notarizeMacBuild(context) {
   if (context.electronPlatformName !== "darwin") return;
+  if (process.env.ALLOW_UNSIGNED_MAC === "true") {
+    console.warn("[release] skipping notarization for explicitly requested manual-reinstall Mac build");
+    return;
+  }
 
   const required = [
     "APPLE_ID",

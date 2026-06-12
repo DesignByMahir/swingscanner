@@ -2,6 +2,12 @@ name: Desktop Release
 
 on:
   workflow_dispatch:
+    inputs:
+      unsigned_manual_mac:
+        description: "Build an unsigned Mac installer for manual reinstall only"
+        required: false
+        type: boolean
+        default: false
   push:
     tags:
       - "v*"
@@ -44,6 +50,7 @@ jobs:
       - run: npm ci
       - run: npm run release:verify-version
       - name: Require macOS signing and notarization credentials
+        if: ${{ !inputs.unsigned_manual_mac }}
         shell: bash
         env:
           CSC_LINK: ${{ secrets.MACOS_CSC_LINK }}
@@ -70,7 +77,9 @@ jobs:
           APPLE_ID: ${{ secrets.APPLE_ID }}
           APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          ALLOW_UNSIGNED_MAC: ${{ inputs.unsigned_manual_mac }}
       - name: Verify signing, notarization, and updater artifacts
+        if: ${{ !inputs.unsigned_manual_mac }}
         shell: bash
         run: |
           set -euo pipefail
@@ -88,6 +97,16 @@ jobs:
           compgen -G "desktop-dist/*.blockmap" > /dev/null
           test -f desktop-dist/latest-mac.yml
           echo "[release] signed/notarized apps and dmg, zip, blockmap, latest-mac.yml artifacts verified."
+      - name: Verify manual Mac installer artifacts
+        if: ${{ inputs.unsigned_manual_mac }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          compgen -G "desktop-dist/*.dmg" > /dev/null
+          compgen -G "desktop-dist/*.zip" > /dev/null
+          compgen -G "desktop-dist/*.blockmap" > /dev/null
+          test -f desktop-dist/latest-mac.yml
+          echo "[release] unsigned manual-reinstall Mac artifacts verified."
       - uses: actions/upload-artifact@v4
         with:
           name: swingscanner-macos
