@@ -7,7 +7,7 @@ export const metadata = { title: "Setup Scanner" };
 export default function ScannerPage() {
   return (
     <>
-      <PageHeader eyebrow="Options-first completed candles" title="Morning setup scanner" description="The local engine finds bases, bull flags, wedge pops, squeezes, and breakout consolidations, then ranks them through sector leadership, horizontal resistance quality, and real options tradability." variant="hero" />
+      <PageHeader eyebrow="Leader-first completed candles" title="Morning setup scanner" description="The local engine finds the strongest stocks in the strongest themes first, then ranks breakouts, weekly 8-week EMA resets, reclaims, pullbacks, and tight bases through daily and weekly structure." variant="hero" />
       <MorningCommandCenter />
       <ScannerDashboard />
     </>

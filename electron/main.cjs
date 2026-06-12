@@ -4,7 +4,11 @@ const fs = require("node:fs");
 const http = require("node:http");
 const net = require("node:net");
 const path = require("node:path");
+const log = require("electron-log/main");
 const { autoUpdater } = require("electron-updater");
+
+log.initialize();
+log.transports.file.level = "info";
 
 if (process.env.SWINGSCANNER_REMOTE_DEBUGGING_PORT) {
   app.commandLine.appendSwitch(
@@ -16,11 +20,14 @@ if (process.env.SWINGSCANNER_REMOTE_DEBUGGING_PORT) {
 let mainWindow;
 let serverProcess;
 let serverUrl;
+let updateDownloaded = false;
 let updateState = {
   status: app.isPackaged ? "idle" : "desktop-only",
   message: app.isPackaged ? "Check & download update" : "Desktop updates only",
   progress: null,
-  version: null,
+  currentVersion: app.getVersion(),
+  latestVersion: null,
+  updateDownloaded: false,
   releaseNotes: null,
 };
 
@@ -131,43 +138,111 @@ async function startProductionServer() {
 }
 
 function configureUpdater() {
+  autoUpdater.logger = log;
   autoUpdater.autoDownload = true;
   autoUpdater.autoInstallOnAppQuit = true;
-  autoUpdater.on("checking-for-update", () => sendUpdateState({ status: "checking", message: "Checking..." }));
-  autoUpdater.on("update-available", (info) => sendUpdateState({
-    status: "available",
-    message: "Update available",
-    version: info.version,
-    releaseNotes: typeof info.releaseNotes === "string" ? info.releaseNotes : null,
-  }));
-  autoUpdater.on("update-not-available", () => sendUpdateState({ status: "current", message: "You're up to date", progress: null }));
-  autoUpdater.on("download-progress", (progress) => sendUpdateState({
-    status: "downloading",
-    message: "Downloading update...",
-    progress: Math.round(progress.percent),
-  }));
-  autoUpdater.on("update-downloaded", (info) => sendUpdateState({
-    status: "downloaded",
-    message: "Restart to update",
-    progress: 100,
-    version: info.version,
-  }));
-  autoUpdater.on("error", (error) => sendUpdateState({
-    status: "error",
-    message: "Update check failed",
-    error: error?.message ?? String(error),
-  }));
+  autoUpdater.on("checking-for-update", () => {
+    log.info("[updater] checking-for-update", { currentVersion: app.getVersion() });
+    sendUpdateState({ status: "checking", message: "Checking for updates...", error: null });
+  });
+  autoUpdater.on("update-available", (info) => {
+    updateDownloaded = false;
+    log.info("[updater] update-available", { currentVersion: app.getVersion(), latestVersion: info.version });
+    sendUpdateState({
+      status: "available",
+      message: `Update v${info.version} available`,
+      latestVersion: info.version,
+      updateDownloaded: false,
+      releaseNotes: typeof info.releaseNotes === "string" ? info.releaseNotes : null,
+    });
+  });
+  autoUpdater.on("update-not-available", (info) => {
+    updateDownloaded = false;
+    log.info("[updater] update-not-available", { currentVersion: app.getVersion(), latestVersion: info.version });
+    sendUpdateState({
+      status: "current",
+      message: "You're up to date",
+      progress: null,
+      latestVersion: info.version,
+      updateDownloaded: false,
+    });
+  });
+  autoUpdater.on("download-progress", (progress) => {
+    log.info("[updater] download-progress", {
+      percent: Math.round(progress.percent),
+      transferred: progress.transferred,
+      total: progress.total,
+    });
+    sendUpdateState({
+      status: "downloading",
+      message: "Downloading update...",
+      progress: Math.round(progress.percent),
+    });
+  });
+  autoUpdater.on("update-downloaded", (info) => {
+    updateDownloaded = true;
+    log.info("[updater] update-downloaded", { currentVersion: app.getVersion(), latestVersion: info.version });
+    sendUpdateState({
+      status: "downloaded",
+      message: "Restart to update",
+      progress: 100,
+      latestVersion: info.version,
+      updateDownloaded: true,
+    });
+  });
+  autoUpdater.on("before-quit-for-update", () => {
+    log.info("[updater] before-quit-for-update", {
+      currentVersion: app.getVersion(),
+      latestVersion: updateState.latestVersion,
+      updateDownloaded,
+    });
+  });
+  autoUpdater.on("error", (error) => {
+    log.error("[updater] error", error);
+    sendUpdateState({
+      status: "error",
+      message: "Update check failed",
+      error: error?.message ?? String(error),
+    });
+  });
 }
 
 async function checkForUpdates() {
-  if (!app.isPackaged) return sendUpdateState({ status: "desktop-only", message: "Desktop updates only" });
+  if (!app.isPackaged) {
+    log.info("[updater] skipped update check in development", {
+      currentVersion: app.getVersion(),
+      forceDevUpdateConfig: autoUpdater.forceDevUpdateConfig,
+    });
+    return sendUpdateState({ status: "desktop-only", message: "Desktop updates only" });
+  }
   try {
-    sendUpdateState({ status: "checking", message: "Checking...", progress: null });
+    sendUpdateState({ status: "checking", message: "Checking for updates...", progress: null, error: null });
     await autoUpdater.checkForUpdates();
   } catch (error) {
+    log.error("[updater] checkForUpdates failed", error);
     sendUpdateState({ status: "error", message: "Update check failed", error: error?.message ?? String(error) });
   }
   return updateState;
+}
+
+function restartToInstallUpdate() {
+  if (!app.isPackaged || !updateDownloaded) {
+    log.warn("[updater] restart-to-install-update ignored", {
+      packaged: app.isPackaged,
+      updateDownloaded,
+      status: updateState.status,
+    });
+    sendUpdateState({
+      message: updateDownloaded ? updateState.message : "Update has not finished downloading",
+    });
+    return;
+  }
+
+  log.info("[updater] restart-to-install-update accepted", {
+    currentVersion: app.getVersion(),
+    latestVersion: updateState.latestVersion,
+  });
+  autoUpdater.quitAndInstall(false, true);
 }
 
 async function createWindow() {
@@ -213,14 +288,17 @@ app.setName("SwingScanner");
 app.setAppUserModelId("com.swingscanner.desktop");
 app.on("before-quit", () => { app.isQuitting = true; });
 app.whenReady().then(async () => {
-  configureUpdater();
+  log.info("[startup] SwingScanner launched", {
+    version: app.getVersion(),
+    packaged: app.isPackaged,
+    platform: process.platform,
+    arch: process.arch,
+  });
+  if (app.isPackaged) configureUpdater();
+  else log.info("[updater] real updater logic disabled for local development");
   ipcMain.handle("updates:get-state", () => updateState);
   ipcMain.handle("updates:check", checkForUpdates);
-  ipcMain.handle("updates:install", () => {
-    if (updateState.status !== "downloaded") return updateState;
-    autoUpdater.quitAndInstall(false, true);
-    return updateState;
-  });
+  ipcMain.on("restart-to-install-update", restartToInstallUpdate);
   await createWindow();
   if (app.isPackaged) setTimeout(() => void checkForUpdates(), 15_000);
   app.on("activate", () => {

@@ -35,9 +35,10 @@ Answer only from the supplied completed-daily scan evidence. Explain the setup c
 
 Required behavior:
 - Distinguish observed facts from interpretation.
-- Treat the setup strictly as a completed-daily-candle structure.
-- Supported structures are breakout setups, bull flags, tight consolidations, Bollinger Band squeezes, and bases around the 8 or 21 EMA.
-- Refer to the horizontal breakout, earlier trendline trigger, base tightening, breakout-day-low stop rule, targets, trend, volume, RSI, relative strength, extension, and warnings when relevant.
+- Treat the setup as a completed-daily and aggregated-weekly structure.
+- Supported structures are breakouts, 8-week EMA bounces, 8-week EMA reclaims, leader pullbacks, tight bases, undercut-and-reclaims, and extended leaders waiting for a reset.
+- Lead with market leadership, canonical theme strength, peer participation, weekly 8/21 EMA structure, then the daily trigger and tradability.
+- Refer to the score cap and cap reasons when they limit the ranking.
 - Explain what would confirm or invalidate the thesis.
 - Never describe an intraday pivot as the detected setup. State that intraday execution data and earnings information are unavailable.
 - Discuss options only from the supplied IV, spread, open-interest, volume, and tradability fields.
@@ -55,6 +56,8 @@ ${JSON.stringify({
   company: detail.setup.company,
   marketDate: detail.marketDate,
   setup: detail.setup.setup,
+  setupLabel: detail.setup.setupLabel,
+  canonicalTheme: detail.setup.canonicalTheme,
   matchedSetups: detail.setup.matchedSetups,
   status: detail.setup.status,
   score: detail.setup.finalScore,
@@ -65,6 +68,20 @@ ${JSON.stringify({
   relativeVolume: detail.setup.relativeVolume,
   rsi: detail.setup.rsi,
   relativeStrength: detail.setup.rs,
+  relative5Spy: detail.setup.relative5Spy,
+  relative5Qqq: detail.setup.relative5Qqq,
+  relative20Spy: detail.setup.relative20Spy,
+  relative20Qqq: detail.setup.relative20Qqq,
+  relative63Spy: detail.setup.relative63Spy,
+  relative63Qqq: detail.setup.relative63Qqq,
+  weekEma8: detail.setup.weekEma8,
+  weekEma21: detail.setup.weekEma21,
+  distanceWeek8Percent: detail.setup.distanceWeek8,
+  weeklyTrendHealthy: detail.setup.weeklyTrendHealthy,
+  themeScore: detail.setup.themeScore,
+  peerStrengthCount: detail.setup.peerStrengthCount,
+  scoreCap: detail.setup.scoreCap,
+  capReasons: detail.setup.capReasons,
   distance8Percent: detail.setup.distance8,
   distance21Percent: detail.setup.distance21,
   distance50Percent: detail.setup.distance50,

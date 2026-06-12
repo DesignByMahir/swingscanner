@@ -114,7 +114,9 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     status: "desktop-only",
     message: "Desktop updates only",
     progress: null,
-    version: null,
+    currentVersion: "development",
+    latestVersion: null,
+    updateDownloaded: false,
     releaseNotes: null,
   });
   const [desktopAvailable, setDesktopAvailable] = useState(false);
@@ -168,11 +170,14 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     writeCommandCenterSettings(next);
   };
 
-  const handleUpdate = async () => {
+  const handleCheckForUpdates = async () => {
     const desktop = window.swingScannerDesktop;
     if (!desktop) return;
-    if (updateState.status === "downloaded") setUpdateState(await desktop.restartToUpdate());
-    else setUpdateState(await desktop.checkForUpdates());
+    setUpdateState(await desktop.checkForUpdates());
+  };
+
+  const handleRestartToUpdate = () => {
+    window.swingScannerDesktop?.restartToUpdate();
   };
 
   return (
@@ -335,23 +340,34 @@ export function AppShell({ children }: { children: React.ReactNode }) {
               </div>
             </div>
             <div className="border-t p-5">
-              <Button
-                disabled={!desktopAvailable || updateState.status === "checking" || updateState.status === "downloading"}
-                variant="outline"
-                className="w-full rounded-full"
-                onClick={handleUpdate}
-              >
-                {updateState.message}
-                <span className="ml-auto text-[10px] text-muted-foreground">
-                  {updateState.status === "downloading" && updateState.progress !== null
-                    ? `${updateState.progress}%`
-                    : updateState.version
-                      ? `v${updateState.version}`
-                      : desktopAvailable
-                        ? "Desktop updater"
-                        : "Desktop updates only"}
-                </span>
-              </Button>
+              <div className="flex items-center justify-between gap-3">
+                <div>
+                  <p className="text-sm font-semibold">Desktop updater debug</p>
+                  <p className="mt-1 text-xs text-muted-foreground">{updateState.message}</p>
+                </div>
+                <span className="rounded-full border px-2.5 py-1 font-mono text-[9px] uppercase tracking-[0.12em] text-muted-foreground">{updateState.status}</span>
+              </div>
+              <div className="mt-4 grid grid-cols-2 gap-2 sm:grid-cols-4">
+                <div className="rounded-xl border bg-background/35 p-3"><p className="text-[9px] uppercase tracking-[0.12em] text-muted-foreground">Installed</p><p className="mt-1 font-mono text-xs">v{updateState.currentVersion}</p></div>
+                <div className="rounded-xl border bg-background/35 p-3"><p className="text-[9px] uppercase tracking-[0.12em] text-muted-foreground">Latest</p><p className="mt-1 font-mono text-xs">{updateState.latestVersion ? `v${updateState.latestVersion}` : "Unknown"}</p></div>
+                <div className="rounded-xl border bg-background/35 p-3"><p className="text-[9px] uppercase tracking-[0.12em] text-muted-foreground">Download</p><p className="mt-1 font-mono text-xs">{updateState.progress === null ? "Not started" : `${updateState.progress}%`}</p></div>
+                <div className="rounded-xl border bg-background/35 p-3"><p className="text-[9px] uppercase tracking-[0.12em] text-muted-foreground">Ready</p><p className={cn("mt-1 font-mono text-xs", updateState.updateDownloaded ? "text-positive" : "text-muted-foreground")}>{updateState.updateDownloaded ? "Yes" : "No"}</p></div>
+              </div>
+              <div className="mt-3 flex gap-2">
+                <Button
+                  disabled={!desktopAvailable || updateState.status === "checking" || updateState.status === "downloading"}
+                  variant="outline"
+                  className="flex-1 rounded-full"
+                  onClick={handleCheckForUpdates}
+                >
+                  Check for updates
+                </Button>
+                {updateState.updateDownloaded && (
+                  <Button className="flex-1 rounded-full" onClick={handleRestartToUpdate}>
+                    Restart to update
+                  </Button>
+                )}
+              </div>
               {updateState.status === "error" && <p className="mt-2 text-center text-[10px] text-negative">{updateState.error ?? "The update source could not be reached."}</p>}
               {updateState.releaseNotes && <p className="mt-2 line-clamp-3 text-[10px] leading-4 text-muted-foreground">{updateState.releaseNotes}</p>}
             </div>

@@ -13,7 +13,7 @@ import { Switch } from "@/components/ui/switch";
 import { useSwingAccount } from "@/components/account-provider";
 import { ALL_SECTORS } from "@/lib/data/sector-catalog";
 
-type SortKey = "rank" | "ticker" | "setup" | "sector" | "options" | "price" | "adr" | "relativeVolume" | "rs" | "emaDistance" | "extension" | "tightening" | "score" | "status";
+type SortKey = "rank" | "ticker" | "setup" | "sector" | "themeStrength" | "options" | "price" | "adr" | "relativeVolume" | "rs" | "emaDistance" | "extension" | "score" | "status";
 type SortDirection = "desc" | "asc";
 
 const statusOrder: Record<StockSetup["status"], number> = {
@@ -29,14 +29,14 @@ function sortValue(stock: StockSetup, key: SortKey): string | number | null {
     case "ticker": return stock.ticker;
     case "setup": return stock.setup;
     case "sector": return `${stock.sector} ${stock.theme}`;
+    case "themeStrength": return stock.themeScore;
     case "options": return stock.optionsTradabilityScore;
     case "price": return stock.price;
     case "adr": return stock.adr;
     case "relativeVolume": return stock.relativeVolume;
     case "rs": return stock.rs;
-    case "emaDistance": return stock.distance8;
+    case "emaDistance": return stock.distanceWeek8;
     case "extension": return stock.extensionRisk;
-    case "tightening": return stock.tighteningPercent ?? stock.plan.tighteningPercent ?? 0;
     case "score": return stock.finalScore;
     case "status": return statusOrder[stock.status];
   }
@@ -162,8 +162,8 @@ export function ScannerTable({
   };
 
   const exportCsv = () => {
-    const headers = ["Ticker", "Company", "Sector", "Industry/theme", "Option IV", "Option spread dollars", "Option spread percent", "Options score", "Setup", "Score", "Extension", "Optimal breakout", "Trendline trigger", "Base tightening", "Base low", "Target 1", "Stop rule"];
-    const rows = visible.map((stock) => [stock.ticker, stock.company, stock.sector, stock.theme, stock.optionIv ?? "Unavailable", stock.optionSpreadDollars ?? "Unavailable", stock.optionSpreadPct ?? "Unavailable", stock.optionsTradabilityScore ?? "Unavailable", stock.setup, stock.finalScore, stock.extension, stock.plan.breakoutLevel ?? stock.plan.entryLow, stock.plan.alternateTrigger ?? stock.plan.entryLow, stock.tighteningPercent ?? stock.plan.tighteningPercent ?? "Unavailable", stock.plan.baseLow ?? "Unavailable", stock.plan.target1, stock.plan.stopRule ?? "Use breakout day's low"]);
+    const headers = ["Ticker", "Company", "Sector", "Market theme", "Industry", "Leadership label", "Setup", "5D vs QQQ", "20D vs QQQ", "3M vs QQQ", "8-week EMA distance", "Theme score", "Option IV", "Option spread dollars", "Options score", "Score", "Score cap", "Extension", "Trigger", "Stop rule"];
+    const rows = visible.map((stock) => [stock.ticker, stock.company, stock.sector, stock.canonicalTheme, stock.theme, stock.setupLabel, stock.setup, stock.relative5Qqq, stock.relative20Qqq, stock.relative63Qqq, stock.distanceWeek8, stock.themeScore, stock.optionIv ?? "Unavailable", stock.optionSpreadDollars ?? "Unavailable", stock.optionsTradabilityScore ?? "Unavailable", stock.finalScore, stock.scoreCap, stock.extension, stock.plan.trigger, stock.plan.stopRule]);
     const csv = [headers, ...rows].map((row) => row.map((value) => `"${String(value).replaceAll('"', '""')}"`).join(",")).join("\n");
     const url = URL.createObjectURL(new Blob([csv], { type: "text/csv" }));
     const anchor = document.createElement("a");
@@ -245,21 +245,21 @@ export function ScannerTable({
       </div>
 
       <div className="panel overflow-x-auto">
-        <table className="scanner-results-table w-full min-w-[1900px] table-fixed text-left text-sm">
+        <table className="scanner-results-table w-full min-w-[2050px] table-fixed text-left text-sm">
           <thead className="sticky top-0 z-[1] border-b bg-background text-[10px] uppercase tracking-[0.12em] text-muted-foreground">
             <tr>
               <SortHeader label="Rank" sortKey="rank" sort={sort} onSort={toggleSort} className="px-4" />
               <SortHeader label="Ticker" sortKey="ticker" sort={sort} onSort={toggleSort} />
               <SortHeader label="Setup" sortKey="setup" sort={sort} onSort={toggleSort} />
               <SortHeader label="Sector / theme" sortKey="sector" sort={sort} onSort={toggleSort} />
+              <SortHeader label="Theme strength" sortKey="themeStrength" sort={sort} onSort={toggleSort} />
               <SortHeader label="Options" sortKey="options" sort={sort} onSort={toggleSort} />
               <SortHeader label="Price" sortKey="price" sort={sort} onSort={toggleSort} />
               <SortHeader label="ADR" sortKey="adr" sort={sort} onSort={toggleSort} />
               <SortHeader label="Rel vol" sortKey="relativeVolume" sort={sort} onSort={toggleSort} />
               <SortHeader label="RS" sortKey="rs" sort={sort} onSort={toggleSort} />
-              <SortHeader label="EMA distance" sortKey="emaDistance" sort={sort} onSort={toggleSort} />
+              <SortHeader label="8W EMA" sortKey="emaDistance" sort={sort} onSort={toggleSort} />
               <SortHeader label="Extension" sortKey="extension" sort={sort} onSort={toggleSort} />
-              <SortHeader label="Tightening" sortKey="tightening" sort={sort} onSort={toggleSort} />
               <SortHeader label="Score" sortKey="score" sort={sort} onSort={toggleSort} />
               <SortHeader label="Status" sortKey="status" sort={sort} onSort={toggleSort} className="px-4" />
             </tr>
@@ -272,17 +272,17 @@ export function ScannerTable({
                   <div className="flex items-center gap-2"><button type="button" onClick={() => toggleFlag(stock.ticker)} aria-label={`${flagged.includes(stock.ticker) ? "Unflag" : "Flag"} ${stock.ticker}`} className={flagged.includes(stock.ticker) ? "text-warning" : "text-muted-foreground/45 hover:text-warning"}><Star size={14} weight={flagged.includes(stock.ticker) ? "fill" : "regular"} /></button><Link href={`/setups/${encodeURIComponent(stock.ticker)}`} className="font-mono font-semibold hover:text-primary">{stock.ticker}</Link></div>
                   <p className="mt-1 max-w-36 truncate text-xs text-muted-foreground">{stock.company}</p>
                 </td>
-                <td><Link href={`/setups/${encodeURIComponent(stock.ticker)}`} className="max-w-36 hover:text-primary">{stock.setup}</Link><p className="mt-1 text-xs text-muted-foreground">{stock.matchedSetups.length} matches</p></td>
-                <td><p>{stock.sector}</p><p className="mt-1 text-xs text-muted-foreground">{stock.theme}</p></td>
+                <td><Link href={`/setups/${encodeURIComponent(stock.ticker)}`} className="max-w-40 hover:text-primary">{stock.setup}</Link><p className="mt-1 max-w-40 text-xs text-primary">{stock.setupLabel}</p></td>
+                <td><p>{stock.sector}</p><p className="mt-1 text-xs text-muted-foreground">{stock.canonicalTheme}</p><p className="mt-1 max-w-40 truncate text-[10px] text-muted-foreground/75">{stock.theme}</p></td>
+                <td><p className="metric-number">{stock.themeScore.toFixed(1)} / 20</p><p className="mt-1 font-mono text-[10px] text-muted-foreground">{stock.peerStrengthCount} strong peers</p></td>
                 <td>{stock.optionsAvailable ? <><p className="font-mono text-xs">IV {stock.optionIv?.toFixed(1)}% · Score {stock.optionsTradabilityScore}</p><p className="mt-1 font-mono text-[10px] text-muted-foreground">Spread {stock.optionSpreadPct?.toFixed(1)}% · OI {compact(stock.optionOpenInterest ?? 0)} · {stock.optionDte}D</p></> : <span className="text-xs text-muted-foreground">Unavailable</span>}</td>
                 <td><p className="metric-number">{money(stock.price)}</p><p className={`mt-1 font-mono text-xs ${stock.change >= 0 ? "text-positive" : "text-negative"}`}>{percent(stock.change)}</p></td>
                 <td className="metric-number">{stock.adr.toFixed(2)}%</td>
                 <td><p className="metric-number">{stock.relativeVolume.toFixed(2)}x</p><p className="mt-1 font-mono text-[10px] text-muted-foreground">{compact(stock.avgVolume)} avg</p></td>
                 <td className="metric-number">{stock.rs}</td>
-                <td><p className="font-mono text-xs">8E {percent(stock.distance8)}</p><p className="mt-1 font-mono text-[10px] text-muted-foreground">21E {percent(stock.distance21)}</p></td>
+                <td><p className="font-mono text-xs">8W {percent(stock.distanceWeek8)}</p><p className="mt-1 font-mono text-[10px] text-muted-foreground">EMA {money(stock.weekEma8)}</p></td>
                 <td><StatusBadge label={stock.extension} /></td>
-                <td className="metric-number">{(stock.tighteningPercent ?? stock.plan.tighteningPercent ?? 0).toFixed(0)}%</td>
-                <td><ScoreBadge score={stock.finalScore} /></td>
+                <td><ScoreBadge score={stock.finalScore} /><p className="mt-1 font-mono text-[10px] text-muted-foreground">cap {stock.scoreCap}</p></td>
                 <td className="px-4"><StatusBadge label={stock.status} /></td>
               </tr>
             ))}

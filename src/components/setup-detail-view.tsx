@@ -172,7 +172,12 @@ function SetupChart({ detail }: { detail: SetupDetail }) {
 
   const startIndex = closestIndex(candles, detail.setup.plan.trendlineStartDate);
   const endIndex = closestIndex(candles, detail.setup.plan.trendlineEndDate);
-  const hasScannerTrendline = startIndex >= 0 && endIndex >= 0 && Number.isFinite(detail.setup.plan.trendlineStartPrice) && Number.isFinite(detail.setup.plan.trendlineEndPrice);
+  const hasScannerTrendline =
+    startIndex >= 0 &&
+    endIndex >= 0 &&
+    Number.isFinite(detail.setup.plan.trendlineStartPrice) &&
+    Number.isFinite(detail.setup.plan.trendlineEndPrice) &&
+    detail.setup.plan.trendlineStartPrice > detail.setup.plan.trendlineEndPrice;
 
   return (
     <div className="panel overflow-hidden">
@@ -232,8 +237,6 @@ function SetupChart({ detail }: { detail: SetupDetail }) {
 export function SetupDetailView({ detail }: { detail: SetupDetail }) {
   const stock = detail.setup;
   const breakout = stock.plan.breakoutLevel ?? stock.plan.entryLow;
-  const alternateTrigger = stock.plan.alternateTrigger ?? stock.plan.entryLow;
-  const tightening = stock.tighteningPercent ?? stock.plan.tighteningPercent ?? 0;
   const strongestParts = useMemo(() => [...stock.scoreParts].sort((a, b) => b.value - a.value).slice(0, 4), [stock.scoreParts]);
   return (
     <div className="space-y-6">
@@ -244,14 +247,14 @@ export function SetupDetailView({ detail }: { detail: SetupDetail }) {
       <div className="panel p-5 md:p-6">
         <div className="flex flex-col gap-5 xl:flex-row xl:items-start xl:justify-between">
           <div>
-            <div className="flex flex-wrap items-center gap-3"><h1 className="font-mono text-3xl font-semibold">{stock.ticker}</h1><StatusBadge label={stock.setup} /><StatusBadge label={stock.extension} /><ScoreBadge score={stock.finalScore} /></div>
-            <p className="mt-2 flex flex-wrap items-center gap-1.5 text-sm text-muted-foreground"><a href={`https://www.tradingview.com/chart/?symbol=${encodeURIComponent(stock.ticker)}`} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-sky-300 hover:text-primary">{stock.company} <ArrowSquareOut size={13} /></a><span>| {stock.sector} | {stock.theme}</span></p>
-            <div className="mt-4 flex flex-wrap gap-x-5 gap-y-2 font-mono text-sm"><span>{money(stock.price)}</span><span className={stock.change >= 0 ? "text-positive" : "text-negative"}>{percent(stock.change)}</span><span>RS {stock.rs}</span><span>RSI {stock.rsi.toFixed(1)}</span><span>ADR {stock.adr.toFixed(2)}%</span><span>Rel vol {stock.relativeVolume.toFixed(2)}x</span><span>Analyst {stock.analystRating ?? "N/A"}</span><span>Options {stock.optionsAvailable ? `${stock.optionIv}% IV / $${stock.optionSpreadDollars} spread / ${stock.optionsTradabilityScore} score` : "N/A"}</span></div>
+            <div className="flex flex-wrap items-center gap-3"><h1 className="font-mono text-3xl font-semibold">{stock.ticker}</h1><StatusBadge label={stock.setup} /><StatusBadge label={stock.setupLabel} /><StatusBadge label={stock.extension} /><ScoreBadge score={stock.finalScore} /></div>
+            <p className="mt-2 flex flex-wrap items-center gap-1.5 text-sm text-muted-foreground"><a href={`https://www.tradingview.com/chart/?symbol=${encodeURIComponent(stock.ticker)}`} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-sky-300 hover:text-primary">{stock.company} <ArrowSquareOut size={13} /></a><span>| {stock.sector} | {stock.canonicalTheme} | {stock.theme}</span></p>
+            <div className="mt-4 flex flex-wrap gap-x-5 gap-y-2 font-mono text-sm"><span>{money(stock.price)}</span><span className={stock.change >= 0 ? "text-positive" : "text-negative"}>{percent(stock.change)}</span><span>RS {stock.rs}</span><span>5D vs QQQ {percent(stock.relative5Qqq)}</span><span>20D vs QQQ {percent(stock.relative20Qqq)}</span><span>8W {percent(stock.distanceWeek8)}</span><span>ADR {stock.adr.toFixed(2)}%</span><span>Rel vol {stock.relativeVolume.toFixed(2)}x</span><span>Options {stock.optionsAvailable ? `${stock.optionIv}% IV / $${stock.optionSpreadDollars} spread / ${stock.optionsTradabilityScore} score` : "N/A"}</span></div>
           </div>
           <div className="grid min-w-full grid-cols-2 gap-3 sm:grid-cols-4 xl:min-w-[560px]">
-            <div className="rounded-lg border bg-background/60 p-3"><p className="text-[9px] uppercase text-muted-foreground">Optimal breakout</p><p className="metric-number mt-2">{breakout.toFixed(2)}</p></div>
-            <div className="rounded-lg border bg-background/60 p-3"><p className="text-[9px] uppercase text-muted-foreground">Trendline trigger</p><p className="metric-number mt-2 text-warning">{alternateTrigger.toFixed(2)}</p></div>
-            <div className="rounded-lg border bg-background/60 p-3"><p className="text-[9px] uppercase text-muted-foreground">Base tightening</p><p className="metric-number mt-2 text-positive">{tightening.toFixed(0)}%</p></div>
+            <div className="rounded-lg border bg-background/60 p-3"><p className="text-[9px] uppercase text-muted-foreground">Primary pivot</p><p className="metric-number mt-2">{breakout.toFixed(2)}</p></div>
+            <div className="rounded-lg border bg-background/60 p-3"><p className="text-[9px] uppercase text-muted-foreground">8-week EMA</p><p className="metric-number mt-2 text-warning">{stock.weekEma8.toFixed(2)}</p></div>
+            <div className="rounded-lg border bg-background/60 p-3"><p className="text-[9px] uppercase text-muted-foreground">Theme score</p><p className="metric-number mt-2 text-positive">{stock.themeScore.toFixed(1)} / 20</p></div>
             <div className="rounded-lg border bg-background/60 p-3"><p className="text-[9px] uppercase text-muted-foreground">Target 1</p><p className="metric-number mt-2 text-positive">{stock.plan.target1.toFixed(2)}</p></div>
           </div>
         </div>
@@ -259,7 +262,7 @@ export function SetupDetailView({ detail }: { detail: SetupDetail }) {
       <SetupChart detail={detail} />
       <div className="grid gap-6"><div className="space-y-6">
         <div className="panel p-5">
-          <div className="flex items-center gap-2 text-primary"><Target weight="fill" /><h2 className="font-medium">Daily trigger plan</h2></div>
+          <div className="flex items-center gap-2 text-primary"><Target weight="fill" /><h2 className="font-medium">Daily / weekly trigger plan</h2></div>
           <p className="mt-4 text-lg leading-7">{stock.plan.trigger}</p>
           <div className="mt-5 grid gap-3 sm:grid-cols-2">
             <div className="rounded-lg border p-4"><p className="text-[10px] uppercase text-muted-foreground">Confirmation</p><p className="mt-2 text-sm leading-6">{stock.plan.confirmation}</p></div>

@@ -6,7 +6,7 @@ declare global {
       isDesktop: true;
       getUpdateState: () => Promise<DesktopUpdateState>;
       checkForUpdates: () => Promise<DesktopUpdateState>;
-      restartToUpdate: () => Promise<DesktopUpdateState>;
+      restartToUpdate: () => void;
       onUpdateState: (listener: (state: DesktopUpdateState) => void) => () => void;
     };
   }
@@ -15,8 +15,10 @@ declare global {
     status: "idle" | "desktop-only" | "checking" | "available" | "current" | "downloading" | "downloaded" | "error";
     message: string;
     progress: number | null;
-    version: string | null;
+    currentVersion: string;
+    latestVersion: string | null;
+    updateDownloaded: boolean;
     releaseNotes: string | null;
-    error?: string;
+    error?: string | null;
   }
 }

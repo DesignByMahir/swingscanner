@@ -55,14 +55,14 @@ export async function getSetupDetail(ticker: string): Promise<SetupDetail | null
   });
 
   const thesis = [
-    `${setup.setup} is the primary pattern; ${setup.matchedSetups.length} supported pattern${setup.matchedSetups.length === 1 ? "" : "s"} matched.`,
-    `This is a completed-daily-candle structure built over approximately ${setup.plan.baseDays ?? 0} sessions, with horizontal resistance at ${(setup.plan.breakoutLevel ?? setup.plan.entryLow).toFixed(2)} and an earlier trendline trigger near ${(setup.plan.alternateTrigger ?? setup.plan.entryLow).toFixed(2)}.`,
-    `The recent range tightened by approximately ${(setup.tighteningPercent ?? setup.plan.tighteningPercent ?? 0).toFixed(0)}% versus the earlier base range.`,
-    `${setup.ticker} is classified in ${setup.sector} (${setup.sectorTicker}), with ${setup.theme} as its industry/theme. Sector strength contributes ${Math.round(setup.scoreParts.find((part) => part.label === "Sector strength")?.value ?? 50)} points to the ranking context.`,
+    `${setup.setupLabel} is the leadership label; ${setup.setup} is the current entry structure.`,
+    `${setup.ticker} is ${setup.relative5Qqq >= 0 ? "outperforming" : "underperforming"} QQQ by ${Math.abs(setup.relative5Qqq).toFixed(1)}% over 5 days, ${setup.relative20Qqq >= 0 ? "outperforming" : "underperforming"} by ${Math.abs(setup.relative20Qqq).toFixed(1)}% over 20 days, and ${setup.relative63Qqq >= 0 ? "outperforming" : "underperforming"} by ${Math.abs(setup.relative63Qqq).toFixed(1)}% over 3 months.`,
+    `Weekly structure is ${setup.weeklyTrendHealthy ? "healthy" : "mixed"} with price ${setup.distanceWeek8.toFixed(1)}% from the 8-week EMA at ${setup.weekEma8.toFixed(2)} and the 21-week EMA at ${setup.weekEma21.toFixed(2)}.`,
+    `${setup.ticker} belongs to ${setup.canonicalTheme} within ${setup.sector} (${setup.sectorTicker}). Theme strength is ${setup.themeScore.toFixed(1)}/20 with ${setup.peerStrengthCount} strong peer${setup.peerStrengthCount === 1 ? "" : "s"}.`,
     setup.optionsAvailable ? `The selected ${setup.optionDte}-DTE near-the-money calls show ${setup.optionIv}% median IV, a $${setup.optionSpreadDollars} median bid/ask gap (${setup.optionSpreadPct}%), ${setup.optionOpenInterest} aggregate open interest, and an options tradability score of ${setup.optionsTradabilityScore}.` : "Usable 21-60 DTE options data was unavailable.",
     ...setup.reasons,
-    `The optimal trigger is the horizontal breakout through ${(setup.plan.breakoutLevel ?? setup.plan.entryLow).toFixed(2)}; the earlier alternative is the resistance trendline near ${(setup.plan.alternateTrigger ?? setup.plan.entryLow).toFixed(2)}.`,
-    `After entry, the stop reference is the breakout day's low. Extension is ${setup.extension.toLowerCase()}.`,
+    `Trigger plan: ${setup.plan.trigger}.`,
+    `After entry, ${setup.plan.stopRule.toLowerCase()}. Extension is ${setup.extension.toLowerCase()}; the score cap is ${setup.scoreCap}.`,
   ];
 
   return {

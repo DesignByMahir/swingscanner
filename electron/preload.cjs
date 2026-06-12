@@ -4,7 +4,7 @@ contextBridge.exposeInMainWorld("swingScannerDesktop", {
   isDesktop: true,
   getUpdateState: () => ipcRenderer.invoke("updates:get-state"),
   checkForUpdates: () => ipcRenderer.invoke("updates:check"),
-  restartToUpdate: () => ipcRenderer.invoke("updates:install"),
+  restartToUpdate: () => ipcRenderer.send("restart-to-install-update"),
   onUpdateState: (listener) => {
     const handler = (_event, state) => listener(state);
     ipcRenderer.on("updates:state", handler);

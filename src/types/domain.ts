@@ -1,12 +1,24 @@
 export type SetupType =
-  | "Base Builder"
-  | "Breakout Setup"
-  | "Bull Flag"
-  | "Wedge Pop"
-  | "Tight Consolidation"
-  | "BB Squeeze"
-  | "8 EMA Base"
-  | "21 EMA Base";
+  | "Breakout"
+  | "8-Week EMA Bounce"
+  | "8-Week EMA Reclaim"
+  | "Leader Pullback"
+  | "Tight Base"
+  | "Undercut and Reclaim"
+  | "Extended / Wait";
+
+export type SetupLabel =
+  | "Theme Leader Reset"
+  | "8-Week EMA Bounce"
+  | "8-Week EMA Reclaim"
+  | "Market Leader Breakout"
+  | "Strong Theme Breakout"
+  | "Leader Pullback Near 8W EMA"
+  | "Extended Leader - Wait for Pullback"
+  | "Setup Only - Not a Leader"
+  | "Failed Breakout / Rejection Candle"
+  | "Broken Leader - Lost 8W EMA"
+  | "Low Quality Momentum";
 
 export type ExtensionLabel =
   | "Clean"
@@ -22,7 +34,7 @@ export interface ScorePart {
 
 export interface TradePlan {
   bias: string;
-  tactic: "Breakout" | "Avoid";
+  tactic: "Breakout" | "Bounce" | "Reclaim" | "Pullback" | "Avoid";
   breakoutLevel: number;
   alternateTrigger: number;
   baseLow: number;
@@ -76,6 +88,22 @@ export interface StockSetup {
   distance21: number;
   distance50: number;
   rs: number;
+  setupLabel: SetupLabel;
+  canonicalTheme: string;
+  relative5Spy: number;
+  relative5Qqq: number;
+  relative20Spy: number;
+  relative20Qqq: number;
+  relative63Spy: number;
+  relative63Qqq: number;
+  weekEma8: number;
+  weekEma21: number;
+  distanceWeek8: number;
+  weeklyTrendHealthy: boolean;
+  themeScore: number;
+  peerStrengthCount: number;
+  scoreCap: number;
+  capReasons: string[];
   setup: SetupType;
   matchedSetups: SetupType[];
   setupQuality: number;
@@ -169,6 +197,8 @@ export interface SectorLeadership {
   ticker: string;
   sector: string;
   score: number;
+  change1d: number;
+  change5d: number;
   change20d: number;
   change63d: number;
   relative20d: number;

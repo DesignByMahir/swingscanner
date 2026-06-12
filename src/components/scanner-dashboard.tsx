@@ -59,8 +59,8 @@ export function ScannerDashboard() {
               {scan && <span className="font-mono text-xs text-muted-foreground">Market date {scan.marketDate}</span>}
             </div>
             <p className="mt-2 text-sm leading-6 text-muted-foreground">
-              Completed daily candles are fetched from live public providers, scored locally, and cached on the D: drive.
-              {scan?.optionsGate && ` Options are ranked by IV, spread, open interest, and liquidity. A $${scan.optionsGate.maxSpreadDollars.toFixed(2)} spread is the preferred ceiling, but chart quality remains visible instead of being blanket-excluded.`}
+              Completed daily and aggregated weekly candles are scored locally for relative strength, theme leadership, 8-week EMA structure, entry quality, and tradability.
+              {scan?.optionsGate && ` Options liquidity influences the tradability score without deleting otherwise valid market leaders.`}
             </p>
           </div>
         </div>
@@ -81,7 +81,7 @@ export function ScannerDashboard() {
       <div className="scanner-metrics mb-5 panel overflow-hidden">
         <div className="grid divide-y sm:grid-cols-2 sm:divide-x sm:divide-y-0 xl:grid-cols-4">
           <Metric label="Universe scanned" value={(scan?.scannedCount ?? 0).toLocaleString()} detail={scan ? `${scan.universeCount.toLocaleString()} clean NasdaqTrader symbols` : "Waiting for a live scan"} />
-          <Metric label="Technical setups" value={`${scan?.passedBaseFilters ?? 0}`} detail="Bases, bull flags, wedge pops, squeezes and breakout structures" />
+          <Metric label="Leader candidates" value={`${scan?.passedBaseFilters ?? 0}`} detail="Liquid names with measurable leadership, weekly structure, or a tradable reset" />
           <Metric label="Preferred options" value={`${scan?.optionsEligibleCount ?? 0}`} detail={scan ? `${scan.optionsRejectedCount ?? 0} shown with weaker liquidity` : "Tradability influences rank instead of deleting charts"} positive={Boolean(scan?.optionsEligibleCount)} />
           <Metric label="Provider failures" value={`${scan?.failedCount ?? 0}`} detail={scan ? `${scan.providerStats.cacheHits} cache hits` : "No scan loaded"} positive={Boolean(scan && scan.failedCount === 0)} />
         </div>

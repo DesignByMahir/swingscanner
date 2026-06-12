@@ -19,6 +19,7 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci
+      - run: npm run release:verify-version
       - run: npm run desktop:prepare
         env:
           NEXT_PUBLIC_SUPABASE_URL: ${{ vars.NEXT_PUBLIC_SUPABASE_URL }}
@@ -41,13 +42,52 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci
+      - run: npm run release:verify-version
+      - name: Require macOS signing and notarization credentials
+        shell: bash
+        env:
+          CSC_LINK: ${{ secrets.MACOS_CSC_LINK }}
+          CSC_KEY_PASSWORD: ${{ secrets.MACOS_CSC_KEY_PASSWORD }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: |
+          for name in CSC_LINK CSC_KEY_PASSWORD APPLE_ID APPLE_APP_SPECIFIC_PASSWORD APPLE_TEAM_ID; do
+            if [ -z "${!name}" ]; then
+              echo "::error::$name is required for signed and notarized macOS releases."
+              exit 1
+            fi
+          done
+          echo "[release] macOS signing and notarization credentials are configured."
       - run: npm run desktop:prepare
         env:
           NEXT_PUBLIC_SUPABASE_URL: ${{ vars.NEXT_PUBLIC_SUPABASE_URL }}
           NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ vars.NEXT_PUBLIC_SUPABASE_ANON_KEY }}
       - run: npx electron-builder --mac dmg zip --x64 --arm64 --publish never --config electron-builder.config.cjs
         env:
-          CSC_IDENTITY_AUTO_DISCOVERY: "false"
+          CSC_LINK: ${{ secrets.MACOS_CSC_LINK }}
+          CSC_KEY_PASSWORD: ${{ secrets.MACOS_CSC_KEY_PASSWORD }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+      - name: Verify signing, notarization, and updater artifacts
+        shell: bash
+        run: |
+          set -euo pipefail
+          app_count=0
+          while IFS= read -r -d '' app_path; do
+            app_count=$((app_count + 1))
+            echo "[release] verifying signature: $app_path"
+            codesign --verify --deep --strict --verbose=2 "$app_path"
+            spctl --assess --type execute --verbose=4 "$app_path"
+            xcrun stapler validate "$app_path"
+          done < <(find desktop-dist -type d -name "SwingScanner.app" -print0)
+          test "$app_count" -ge 2
+          compgen -G "desktop-dist/*.dmg" > /dev/null
+          compgen -G "desktop-dist/*.zip" > /dev/null
+          compgen -G "desktop-dist/*.blockmap" > /dev/null
+          test -f desktop-dist/latest-mac.yml
+          echo "[release] signed/notarized apps and dmg, zip, blockmap, latest-mac.yml artifacts verified."
       - uses: actions/upload-artifact@v4
         with:
           name: swingscanner-macos
@@ -66,6 +106,16 @@ jobs:
         with:
           path: release-artifacts
           merge-multiple: true
+      - name: Verify complete release payload
+        shell: bash
+        run: |
+          set -euo pipefail
+          compgen -G "release-artifacts/*.exe" > /dev/null
+          compgen -G "release-artifacts/*.dmg" > /dev/null
+          compgen -G "release-artifacts/*.zip" > /dev/null
+          compgen -G "release-artifacts/*.blockmap" > /dev/null
+          test -f release-artifacts/latest.yml
+          test -f release-artifacts/latest-mac.yml
       - uses: softprops/action-gh-release@v2
         with:
           name: SwingScanner ${{ github.ref_name }}

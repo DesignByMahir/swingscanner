@@ -1,231 +1,181 @@
 import pLimit from "p-limit";
-import type { DailyCandle, FreeScanResult, ScannerRules, SectorLeadership, SetupType, StockSetup, UniverseSymbol } from "@/types/domain";
+import type {
+  DailyCandle,
+  FreeScanResult,
+  ScannerRules,
+  SectorLeadership,
+  StockSetup,
+  UniverseSymbol,
+  TradePlan,
+} from "@/types/domain";
 import { scannerRules } from "@/lib/scanner-config";
-import { clamp, extensionLabel, gradeScore } from "@/lib/scoring";
+import { clamp, gradeScore } from "@/lib/scoring";
 import { setCached, withCache } from "@/lib/data/cache";
 import { ProviderRouter } from "@/lib/data/provider-router";
 import { getNasdaqUniverse } from "@/lib/data/providers/nasdaq-universe-provider";
-import { getSectorMetadataMap, getSectorTheme, LIQUID_SCAN_PRIORITY, SECTOR_ETFS, SECTOR_NAMES, type SectorMetadata } from "@/lib/data/sector-theme-map";
+import {
+  getSectorMetadataMap,
+  getSectorTheme,
+  LIQUID_SCAN_PRIORITY,
+  SECTOR_ETFS,
+  SECTOR_NAMES,
+  type SectorMetadata,
+} from "@/lib/data/sector-theme-map";
 import {
   getOptionsConfluence,
   type OptionsConfluence,
 } from "@/lib/data/market-confluence-provider";
-import { adr, averageVolume, bollingerBandwidthPercentile, changePercent, distancePercent, ema, rsi } from "./indicators";
-import { findBaseBuilder, passesOptionsGate } from "./options-first";
-import { selectSectorBalancedCandidates } from "./sector-selection";
-import { setupGeometry } from "./setup-geometry";
+import { averageVolume, changePercent, distancePercent, ema, rsi } from "./indicators";
+import { passesOptionsGate } from "./options-first";
+import {
+  scoreLeaderEvidence,
+  type BenchmarkReturns,
+  type LeaderEvidence,
+  type SectorContext,
+} from "./leader-scoring";
 
 export interface FreeScanOptions {
   rules?: Partial<ScannerRules>;
   force?: boolean;
 }
 
-interface DetectedSetup {
-  type: SetupType;
-  quality: number;
-  breakoutLevel: number;
-  baseLow: number;
-  support: number;
-  baseDays: number;
-  tighteningPercent: number;
-  alternateTrigger: number;
-  trendlineStartDate: string;
-  trendlineStartPrice: number;
-  trendlineEndDate: string;
-  trendlineEndPrice: number;
-  horizontalTouches: number;
-  hasDescendingTrendline: boolean;
+interface CandidateHistory {
+  symbol: UniverseSymbol;
+  candles: DailyCandle[];
 }
 
-function detectSetups(candles: DailyCandle[], adrPct: number, ema8Value: number, ema21Value: number) {
+function buildTradePlan(price: number, evidence: LeaderEvidence, candles: DailyCandle[]) {
   const latest = candles.at(-1)!;
-  const closes = candles.map((bar) => bar.close);
-  const base5 = candles.slice(-6, -1);
-  const base8 = candles.slice(-9, -1);
-  const base10 = candles.slice(-11, -1);
-  const base20 = candles.slice(-21, -1);
-  const previous20High = Math.max(...base20.map((bar) => bar.high));
-  const rangePercent = (sample: DailyCandle[]) =>
-    ((Math.max(...sample.map((bar) => bar.high)) - Math.min(...sample.map((bar) => bar.low))) / latest.close) * 100;
-  const range5 = rangePercent(base5);
-  const range8 = rangePercent(base8);
-  const range10 = rangePercent(base10);
-  const volume20 = averageVolume(candles.slice(0, -1), 20) ?? latest.volume;
-  const baseVolume = averageVolume(base8, Math.min(5, base8.length)) ?? volume20;
-  const matches: DetectedSetup[] = [];
-  const dist8 = Math.abs(distancePercent(latest.close, ema8Value));
-  const dist21 = Math.abs(distancePercent(latest.close, ema21Value));
-  const squeeze = bollingerBandwidthPercentile(closes);
-  const impulseStart = candles.at(-16)?.close ?? latest.close;
-  const impulseEnd = candles.at(-6)?.close ?? latest.close;
-  const impulsePercent = ((impulseEnd / impulseStart) - 1) * 100;
-  const nearBreakout = latest.close >= previous20High * 0.97;
-  const adrDollars = latest.close * adrPct / 100;
-  const addMatch = (type: SetupType, quality: number, sample: DailyCandle[], support: number) => {
-    matches.push({ type, quality, support, baseDays: sample.length, ...setupGeometry(sample, latest, adrDollars) });
-  };
-  const baseBuilder = findBaseBuilder(candles, adrPct, ema8Value, ema21Value);
-  if (baseBuilder) {
-    matches.push({
-      type: "Base Builder",
-      quality: baseBuilder.quality,
-      support: baseBuilder.support,
-      baseDays: baseBuilder.sample.length,
-      ...setupGeometry(baseBuilder.sample, latest, adrDollars),
-      tighteningPercent: baseBuilder.tighteningPercent,
-    });
-  }
+  const adrDollars = price * (candles.slice(-20).reduce(
+    (sum, bar) => sum + (bar.high - bar.low) / Math.max(bar.close, 0.01),
+    0,
+  ) / Math.min(candles.length, 20));
+  const breakout = evidence.breakoutLevel;
+  const isBreakout = evidence.setup === "Breakout" || evidence.setup === "Tight Base";
+  const isReclaim = evidence.setup === "8-Week EMA Reclaim" || evidence.setup === "Undercut and Reclaim";
+  const entryLow = isBreakout ? breakout : Math.max(latest.high, evidence.weekEma8);
+  const entryHigh = entryLow + adrDollars * 0.2;
+  const baseDepth = Math.max(breakout - evidence.baseLow, adrDollars);
+  const tactic: TradePlan["tactic"] = evidence.setup === "Extended / Wait"
+    ? "Avoid"
+    : isBreakout
+      ? "Breakout"
+      : isReclaim
+        ? "Reclaim"
+        : evidence.setup === "8-Week EMA Bounce"
+          ? "Bounce"
+          : "Pullback";
+  const trigger = isBreakout
+    ? `Clear the horizontal pivot at ${breakout.toFixed(2)} with a strong close and expanding volume`
+    : isReclaim
+      ? `Hold the 8-week EMA near ${evidence.weekEma8.toFixed(2)} and clear ${latest.high.toFixed(2)} to confirm the reclaim`
+      : evidence.setup === "8-Week EMA Bounce"
+        ? `Confirm the bounce from the rising 8-week EMA near ${evidence.weekEma8.toFixed(2)} by clearing ${latest.high.toFixed(2)}`
+        : evidence.setup === "Extended / Wait"
+          ? `Do not chase. Wait for a reset toward the rising 8-week EMA near ${evidence.weekEma8.toFixed(2)}`
+          : `Hold support near ${evidence.support.toFixed(2)} and clear ${latest.high.toFixed(2)} for a next-day entry`;
 
-  if (nearBreakout) {
-    addMatch("Breakout Setup", 84 + clamp((latest.close / previous20High - 0.97) * 300, 0, 12), base20, Math.max(ema8Value, ema21Value));
-  }
-  if (impulsePercent >= Math.max(8, adrPct * 2) && range5 <= adrPct * 2.4 && latest.close >= ema8Value && baseVolume <= volume20 * 1.05) {
-    addMatch("Bull Flag", 86 + clamp(impulsePercent - 8, 0, 10) - clamp(range5 / adrPct * 3, 0, 8), base5, ema8Value);
-  }
-  for (const days of [8, 10, 12, 15]) {
-    const wedge = candles.slice(-days);
-    const split = Math.floor(wedge.length / 2);
-    const early = wedge.slice(0, split);
-    const late = wedge.slice(split);
-    const earlyHigh = Math.max(...early.map((bar) => bar.high));
-    const lateHigh = Math.max(...late.map((bar) => bar.high));
-    const earlyLow = Math.min(...early.map((bar) => bar.low));
-    const lateLow = Math.min(...late.map((bar) => bar.low));
-    const earlyRange = earlyHigh - earlyLow;
-    const lateRange = lateHigh - lateLow;
-    const converging =
-      lateHigh <= earlyHigh * 1.012 &&
-      lateLow >= earlyLow * 1.003 &&
-      lateRange <= earlyRange * 0.86;
-    const pressingTrigger = latest.close >= lateHigh - adrDollars * 0.55;
-    if (converging && pressingTrigger && latest.close >= ema21Value * 0.98) {
-      addMatch("Wedge Pop", 84 + clamp((1 - lateRange / Math.max(earlyRange, 0.01)) * 20, 0, 12), wedge, Math.max(earlyLow, ema21Value));
-      break;
-    }
-  }
-  if (range8 <= adrPct * 2.1) {
-    addMatch("Tight Consolidation", 90 - clamp(range8 / adrPct * 5, 0, 12), base8, Math.max(ema8Value, ema21Value));
-  }
-  if (squeeze && squeeze.percentile <= 0.2) {
-    addMatch("BB Squeeze", 96 - squeeze.percentile * 30, base10, Math.max(ema8Value, ema21Value));
-  }
-  if (dist8 <= adrPct * 0.6 && range8 <= adrPct * 3 && latest.close >= ema21Value) {
-    addMatch("8 EMA Base", 89 - clamp(dist8 * 4, 0, 10) - clamp(range8 / adrPct * 2, 0, 6), base8, ema8Value);
-  }
-  if (dist21 <= adrPct * 0.7 && range10 <= adrPct * 3.4 && latest.close >= ema21Value * 0.995) {
-    addMatch("21 EMA Base", 87 - clamp(dist21 * 3.5, 0, 10) - clamp(range10 / adrPct * 2, 0, 6), base10, ema21Value);
-  }
-  return matches.sort((a, b) => b.quality - a.quality);
-}
-
-function buildTradePlan(price: number, setup: DetectedSetup, adrPct: number) {
-  const adrDollars = price * adrPct / 100;
-  const breakout = setup.breakoutLevel;
-  const entryLow = breakout;
-  const entryHigh = breakout + adrDollars * 0.2;
-  const baseDepth = Math.max(breakout - setup.baseLow, adrDollars);
   return {
-    bias: `Constructive while the ${setup.baseDays}-day base holds above ${setup.support.toFixed(2)}`,
-    tactic: "Breakout" as const,
+    bias: `${evidence.setupLabel}; constructive while weekly support near ${evidence.weekEma8.toFixed(2)} holds`,
+    tactic,
     breakoutLevel: Number(breakout.toFixed(2)),
-    alternateTrigger: Number(setup.alternateTrigger.toFixed(2)),
-    baseLow: Number(setup.baseLow.toFixed(2)),
-    baseDays: setup.baseDays,
-    tighteningPercent: Number(setup.tighteningPercent.toFixed(1)),
-    trendlineStartDate: setup.trendlineStartDate,
-    trendlineStartPrice: Number(setup.trendlineStartPrice.toFixed(2)),
-    trendlineEndDate: setup.trendlineEndDate,
-    trendlineEndPrice: Number(setup.trendlineEndPrice.toFixed(2)),
+    alternateTrigger: Number(latest.high.toFixed(2)),
+    baseLow: Number(evidence.baseLow.toFixed(2)),
+    baseDays: evidence.baseDays,
+    tighteningPercent: Number(evidence.tighteningPercent.toFixed(1)),
+    trendlineStartDate: candles.at(-10)?.date ?? latest.date,
+    trendlineStartPrice: Number(breakout.toFixed(2)),
+    trendlineEndDate: latest.date,
+    trendlineEndPrice: Number(breakout.toFixed(2)),
     entryLow: Number(entryLow.toFixed(2)),
     entryHigh: Number(entryHigh.toFixed(2)),
-    trigger: setup.hasDescendingTrendline
-      ? `Optimal trigger: clear horizontal resistance at ${breakout.toFixed(2)}. Earlier trigger: clear the descending resistance trendline near ${setup.alternateTrigger.toFixed(2)}`
-      : `Optimal trigger: clear the repeated horizontal resistance at ${breakout.toFixed(2)}. No valid descending trendline trigger is present`,
-    confirmation: "Confirm price holds above the chosen trigger with expanding volume; use a live broker feed for execution",
-    stopRule: "After entry, use the breakout day's low as the stop reference",
-    target1: Number((breakout + baseDepth * 0.5).toFixed(2)),
-    target2: Number((breakout + baseDepth).toFixed(2)),
-    timeframe: `Daily ${setup.type.toLowerCase()} built over approximately ${setup.baseDays} sessions`,
-    avoid: `Do not chase more than ${(adrDollars * 0.5).toFixed(2)} above the planned entry`,
-    invalidation: `Before entry, a decisive loss of the ${setup.baseDays}-day base or support near ${setup.support.toFixed(2)} invalidates the setup`,
+    trigger,
+    confirmation: "Confirm the level on a completed daily close with improving relative strength and constructive volume",
+    stopRule: "After entry, use the trigger day's low or the nearby weekly support level as the stop reference",
+    target1: Number((entryLow + baseDepth * 0.5).toFixed(2)),
+    target2: Number((entryLow + baseDepth).toFixed(2)),
+    timeframe: `${evidence.setup} within a ${evidence.weeklyTrendHealthy ? "healthy" : "mixed"} weekly trend`,
+    avoid: evidence.setup === "Extended / Wait"
+      ? `Wait for price to move closer to the 8-week EMA; it is currently ${evidence.distanceWeek8.toFixed(1)}% above it`
+      : `Avoid an entry more than ${adrDollars.toFixed(2)} above the trigger`,
+    invalidation: `A decisive close below weekly support near ${evidence.weekEma8.toFixed(2)} invalidates the long setup`,
   };
 }
 
 export function analyzeSymbol(
   symbol: UniverseSymbol,
   candles: DailyCandle[],
-  spyReturn63: number,
-  marketScore: number,
+  benchmarks: BenchmarkReturns,
   sectorMetadata: Record<string, SectorMetadata>,
-  sectorScores: Map<string, number>,
-  sectorRanks = new Map<string, number>(),
+  sectorContexts: Map<string, SectorContext>,
+  peerStrengthCount = 0,
+  options?: OptionsConfluence,
 ): StockSetup | null {
-  if (candles.length < 205) return null;
+  const { sector, sectorTicker, theme, themeSlug } = getSectorTheme(
+    symbol.symbol,
+    symbol.name,
+    sectorMetadata,
+  );
+  const sectorContext = sectorContexts.get(sectorTicker) ?? {
+    score: 50,
+    rank: 99,
+    change1d: 0,
+    change5d: 0,
+    change20d: 0,
+    relative20d: 0,
+  };
+  const evidence = scoreLeaderEvidence({
+    ticker: symbol.symbol,
+    company: symbol.name,
+    industry: theme,
+    candles,
+    benchmarks,
+    sector: sectorContext,
+    peerStrengthCount,
+    optionsTradabilityScore: options?.optionsTradabilityScore,
+    optionSpreadDollars: options?.optionSpreadDollars,
+  });
+  if (!evidence) return null;
+
   const closes = candles.map((bar) => bar.close);
   const latest = candles.at(-1)!;
   const ema8Value = ema(closes, 8)!;
   const ema21Value = ema(closes, 21)!;
   const ema50Value = ema(closes, 50)!;
-  const ema200Value = ema(closes, 200)!;
-  const adrPct = adr(candles, 20)!;
   const avgVolume = averageVolume(candles.slice(0, -1), 20)!;
   const relativeVolume = latest.volume / Math.max(avgVolume, 1);
-  const rsi14 = rsi(closes, 14)!;
-  const dollarVolume = latest.close * avgVolume;
-  if (latest.close <= 3 || avgVolume <= 350_000 || dollarVolume <= 8_000_000 || adrPct <= 1.5 || latest.close <= ema21Value * 0.97 || latest.close <= ema50Value * 0.98) return null;
-  const matches = detectSetups(candles, adrPct, ema8Value, ema21Value);
-  if (!matches.length) return null;
-  const rsRaw = changePercent(closes, 63) - spyReturn63;
-  const relativeStrength = clamp(50 + rsRaw * 3.2);
+  const adrPct = candles.slice(-20).reduce(
+    (sum, bar) => sum + ((bar.high - bar.low) / Math.max(bar.close, 0.01)) * 100,
+    0,
+  ) / Math.min(candles.length, 20);
   const distance8 = distancePercent(latest.close, ema8Value);
   const distance21 = distancePercent(latest.close, ema21Value);
   const distance50 = distancePercent(latest.close, ema50Value);
-  const extensionRisk = clamp(
-    Math.max(0, distance8 / adrPct - 0.75) * 34 +
-    Math.max(0, distance21 / adrPct - 1.25) * 20 +
-    Math.max(0, rsi14 - 68) * 2,
-  );
-  const extension = extensionLabel(extensionRisk);
-  const primary = matches[0];
-  const { sector, sectorTicker, theme, themeSlug } = getSectorTheme(symbol.symbol, symbol.name, sectorMetadata);
-  const sectorScore = sectorScores.get(sectorTicker) ?? 50;
-  const trendScore = clamp(
-    25 * Number(latest.close > ema8Value) +
-    25 * Number(ema8Value > ema21Value) +
-    25 * Number(ema21Value > ema50Value) +
-    25 * Number(ema50Value > ema200Value),
-  );
-  const volumeQuality = clamp(55 + relativeVolume * 25);
-  const locationQuality = clamp(100 - Math.abs(distance8 / adrPct) * 28);
-  const structureQuality = clamp(
-    58 +
-    Math.min(primary.horizontalTouches, 4) * 9 +
-    Number(primary.hasDescendingTrendline) * 4,
-  );
-  const setupQuality = clamp(primary.quality + Math.min(primary.horizontalTouches - 1, 3) * 2);
-  const finalScore = clamp(
-    marketScore * 0.14 +
-    sectorScore * 0.24 +
-    relativeStrength * 0.15 +
-    volumeQuality * 0.11 +
-    setupQuality * 0.14 +
-    locationQuality * 0.08 +
-    trendScore * 0.08 +
-    structureQuality * 0.06 -
-    extensionRisk * 0.18,
-  );
-  const plan = buildTradePlan(latest.close, primary, adrPct);
-  const status = extension === "Avoid / Chasing" ? "Rejected" : finalScore >= 78 ? "Actionable" : "Watch only";
-  const warnings = ["Market capitalization is unavailable from free EOD candle sources."];
+  const plan = buildTradePlan(latest.close, evidence, candles);
+  const status = evidence.heavySellingBelowWeek8 || evidence.finalScore < 55
+    ? "Rejected"
+    : evidence.setup === "Extended / Wait"
+      ? "Watch only"
+      : evidence.finalScore >= 78
+        ? "Actionable"
+        : "Watch only";
+
+  const setupMatches = [
+    evidence.setup,
+    evidence.weeklyTrendHealthy && evidence.setup !== "Leader Pullback" ? "Leader Pullback" : null,
+    evidence.tighteningPercent >= 20 && evidence.setup !== "Tight Base" ? "Tight Base" : null,
+  ].filter((item): item is StockSetup["setup"] => item !== null);
+
   return {
     rank: 0,
     ticker: symbol.symbol,
     company: symbol.name,
     sector,
     sectorTicker,
-    sectorRank: sectorRanks.get(sectorTicker),
+    sectorRank: sectorContext.rank,
     theme,
     themeSlug,
+    canonicalTheme: evidence.canonicalTheme,
     price: Number(latest.close.toFixed(2)),
     change: Number(changePercent(closes, 1).toFixed(2)),
     adr: Number(adrPct.toFixed(2)),
@@ -235,51 +185,58 @@ export function analyzeSymbol(
     marketCapUnavailable: true,
     analystRating: null,
     analystScore: null,
-    optionsAvailable: false,
-    optionExpiration: null,
-    optionDte: null,
-    optionIv: null,
-    optionSpreadDollars: null,
-    optionSpreadPct: null,
-    optionOpenInterest: null,
-    optionVolume: null,
-    optionsTradabilityScore: null,
-    rsi: Number(rsi14.toFixed(1)),
+    optionsAvailable: options?.optionsAvailable ?? false,
+    optionExpiration: options?.optionExpiration ?? null,
+    optionDte: options?.optionDte ?? null,
+    optionIv: options?.optionIv ?? null,
+    optionSpreadDollars: options?.optionSpreadDollars ?? null,
+    optionSpreadPct: options?.optionSpreadPct ?? null,
+    optionOpenInterest: options?.optionOpenInterest ?? null,
+    optionVolume: options?.optionVolume ?? null,
+    optionsTradabilityScore: options?.optionsTradabilityScore ?? null,
+    rsi: Number((rsi(closes, 14) ?? 50).toFixed(1)),
     distance8: Number(distance8.toFixed(2)),
     distance21: Number(distance21.toFixed(2)),
     distance50: Number(distance50.toFixed(2)),
-    rs: Math.round(relativeStrength),
-    setup: primary.type,
-    matchedSetups: matches.map((match) => match.type),
-    setupQuality: Math.round(setupQuality),
-    extensionRisk: Math.round(extensionRisk),
-    extension,
-    finalScore: Math.round(finalScore),
-    grade: gradeScore(finalScore),
+    rs: Math.round(evidence.marketLeadershipScore / 25 * 100),
+    setupLabel: evidence.setupLabel,
+    relative5Spy: Number(evidence.relative5Spy.toFixed(2)),
+    relative5Qqq: Number(evidence.relative5Qqq.toFixed(2)),
+    relative20Spy: Number(evidence.relative20Spy.toFixed(2)),
+    relative20Qqq: Number(evidence.relative20Qqq.toFixed(2)),
+    relative63Spy: Number(evidence.relative63Spy.toFixed(2)),
+    relative63Qqq: Number(evidence.relative63Qqq.toFixed(2)),
+    weekEma8: Number(evidence.weekEma8.toFixed(2)),
+    weekEma21: Number(evidence.weekEma21.toFixed(2)),
+    distanceWeek8: Number(evidence.distanceWeek8.toFixed(2)),
+    weeklyTrendHealthy: evidence.weeklyTrendHealthy,
+    themeScore: Number(evidence.themeScore.toFixed(1)),
+    peerStrengthCount,
+    scoreCap: evidence.scoreCap,
+    capReasons: evidence.capReasons,
+    setup: evidence.setup,
+    matchedSetups: [...new Set(setupMatches)],
+    setupQuality: Math.round(evidence.setupQuality),
+    extensionRisk: Math.round(evidence.extensionRisk),
+    extension: evidence.extension,
+    finalScore: Math.round(evidence.finalScore),
+    grade: gradeScore(evidence.finalScore),
     status,
     earningsDays: 999,
     tighteningPercent: plan.tighteningPercent,
     scoreParts: [
-      { label: "Market regime", value: marketScore, weight: 14 },
-      { label: "Sector strength", value: sectorScore, weight: 24 },
-      { label: "Relative strength", value: relativeStrength, weight: 15 },
-      { label: "Volume quality", value: volumeQuality, weight: 11 },
-      { label: "Pattern quality", value: setupQuality, weight: 14 },
-      { label: "EMA location", value: locationQuality, weight: 8 },
-      { label: "Trend structure", value: trendScore, weight: 8 },
-      { label: "Horizontal resistance", value: structureQuality, weight: 6 },
+      { label: "Market leadership / RS", value: evidence.marketLeadershipScore / 25 * 100, weight: 25 },
+      { label: "Theme / sector strength", value: evidence.themeScore / 20 * 100, weight: 20 },
+      { label: "Weekly trend / 8W EMA", value: evidence.weeklyTrendScore / 25 * 100, weight: 25 },
+      { label: "Daily setup quality", value: evidence.dailySetupScore / 20 * 100, weight: 20 },
+      { label: "Volume / tradability", value: evidence.tradabilityScore / 10 * 100, weight: 10 },
     ],
-    reasons: [
-      `${primary.type} detected with ${primary.horizontalTouches} touch${primary.horizontalTouches === 1 ? "" : "es"} near horizontal resistance at ${plan.breakoutLevel.toFixed(2)}`,
-      primary.hasDescendingTrendline
-        ? `A descending resistance trendline provides an earlier trigger near ${plan.alternateTrigger.toFixed(2)}`
-        : "No valid descending resistance trendline was detected; the horizontal key level is the trigger",
-      `${sector} sector (${sectorTicker}) strength score is ${Math.round(sectorScore)}; industry is ${theme}`,
-      `Price is above the 21 EMA and 50 EMA`,
-      `Average dollar volume is $${(dollarVolume / 1_000_000).toFixed(1)}M`,
-      `Relative strength score is ${Math.round(relativeStrength)}`,
+    reasons: evidence.reasons,
+    warnings: [
+      "Market capitalization and institutional ownership are unavailable from free EOD candle sources.",
+      ...evidence.capReasons.map((reason) => `Score capped: ${reason}.`),
+      ...(options?.optionsTradabilityScore == null ? ["Usable 21-60 DTE options data was unavailable."] : []),
     ],
-    warnings,
     plan,
   };
 }
@@ -287,34 +244,40 @@ export function analyzeSymbol(
 export function applyOptionsScoring(stock: StockSetup, options: OptionsConfluence) {
   Object.assign(stock, options);
   if (options.optionsTradabilityScore == null) {
-    stock.warnings.push("Usable 21-60 DTE options data was unavailable.");
+    if (!stock.warnings.includes("Usable 21-60 DTE options data was unavailable.")) {
+      stock.warnings.push("Usable 21-60 DTE options data was unavailable.");
+    }
     return stock;
   }
-  const optionsAdjustment =
-    (options.optionsTradabilityScore - 60) * 0.22 -
-    Math.max(0, (options.optionSpreadDollars ?? 0) - 1) * 5 -
-    Math.max(0, 50 - (options.optionIv ?? 0)) * 0.08;
-  stock.finalScore = Math.round(clamp(stock.finalScore + optionsAdjustment));
+  const optionsContribution =
+    options.optionsTradabilityScore / 100 * 2 -
+    Math.max(0, (options.optionSpreadDollars ?? 0) - 1) * 0.8;
+  const existingPart = stock.scoreParts.find((part) => part.label === "Volume / tradability");
+  const previousContribution = 0.5;
+  const adjustment = clamp(optionsContribution, -2, 2) - previousContribution;
+  stock.finalScore = Math.round(Math.min(stock.scoreCap, clamp(stock.finalScore + adjustment)));
   stock.grade = gradeScore(stock.finalScore);
-  stock.status = stock.extension === "Avoid / Chasing"
+  stock.status = stock.setupLabel === "Broken Leader - Lost 8W EMA" || stock.finalScore < 55
     ? "Rejected"
-    : stock.finalScore >= 78
-      ? "Actionable"
-      : "Watch only";
-  stock.scoreParts.push({
-    label: "Options tradability",
-    value: options.optionsTradabilityScore,
-    weight: 18,
-  });
+    : stock.setup === "Extended / Wait"
+      ? "Watch only"
+      : stock.finalScore >= 78
+        ? "Actionable"
+        : "Watch only";
+  if (existingPart) {
+    existingPart.value = clamp(existingPart.value + adjustment * 10);
+  }
   stock.reasons.push(
-    `Near-the-money calls show ${options.optionIv?.toFixed(1)}% IV with a $${options.optionSpreadDollars?.toFixed(2)} median spread (${options.optionSpreadPct?.toFixed(1)}%)`,
+    `Near-the-money calls show ${options.optionIv?.toFixed(1)}% IV with a $${options.optionSpreadDollars?.toFixed(2)} median spread and ${options.optionsTradabilityScore}/100 tradability`,
   );
   return stock;
 }
 
 function selectUniverse(all: UniverseSymbol[], max: number) {
   const bySymbol = new Map(all.map((item) => [item.symbol, item]));
-  const priority = LIQUID_SCAN_PRIORITY.flatMap((symbol) => bySymbol.get(symbol) ? [bySymbol.get(symbol)!] : []);
+  const priority = LIQUID_SCAN_PRIORITY.flatMap((symbol) =>
+    bySymbol.get(symbol) ? [bySymbol.get(symbol)!] : [],
+  );
   const used = new Set(priority.map((item) => item.symbol));
   return [...priority, ...all.filter((item) => !used.has(item.symbol))].slice(0, max);
 }
@@ -322,19 +285,50 @@ function selectUniverse(all: UniverseSymbol[], max: number) {
 function passesBroadPrefilter(closes: number[]) {
   if (closes.length < 205) return false;
   const price = closes.at(-1)!;
-  const ema8Value = ema(closes, 8)!;
-  const ema21Value = ema(closes, 21)!;
-  const ema50Value = ema(closes, 50)!;
-  if (price <= 3 || price <= ema21Value * 0.96 || price <= ema50Value * 0.97) return false;
-  const distance8 = Math.abs(distancePercent(price, ema8Value));
-  const distance21 = Math.abs(distancePercent(price, ema21Value));
-  const previous20High = Math.max(...closes.slice(-21, -1));
-  const squeeze = bollingerBandwidthPercentile(closes);
+  const ema40 = ema(closes, 40)!;
+  const high50 = Math.max(...closes.slice(-50));
+  const strongPriorRun = changePercent(closes, 63) >= 5;
   return (
-    distance8 <= 10 ||
-    distance21 <= 12 ||
-    price >= previous20High * 0.92 ||
-    Boolean(squeeze && squeeze.percentile <= 0.35)
+    price > 3 &&
+    (
+      Math.abs(distancePercent(price, ema40)) <= 18 ||
+      price >= high50 * 0.82 ||
+      strongPriorRun
+    )
+  );
+}
+
+function leaderComparator(left: StockSetup, right: StockSetup) {
+  const leftEligible = Number(
+    (
+      left.relative5Spy > 0 ||
+      left.relative5Qqq > 0 ||
+      left.relative20Spy > 0 ||
+      left.relative20Qqq > 0 ||
+      left.relative63Spy > 0 ||
+      left.relative63Qqq > 0
+    ) &&
+    left.themeScore >= 11,
+  );
+  const rightEligible = Number(
+    (
+      right.relative5Spy > 0 ||
+      right.relative5Qqq > 0 ||
+      right.relative20Spy > 0 ||
+      right.relative20Qqq > 0 ||
+      right.relative63Spy > 0 ||
+      right.relative63Qqq > 0
+    ) &&
+    right.themeScore >= 11,
+  );
+  const leftActionability = leftEligible + Number(left.status === "Actionable" && left.setup !== "Extended / Wait");
+  const rightActionability = rightEligible + Number(right.status === "Actionable" && right.setup !== "Extended / Wait");
+  return (
+    rightActionability - leftActionability ||
+    right.finalScore - left.finalScore ||
+    right.rs - left.rs ||
+    right.themeScore - left.themeScore ||
+    Number(right.weeklyTrendHealthy) - Number(left.weeklyTrendHealthy)
   );
 }
 
@@ -342,49 +336,58 @@ export async function runFreeDailyScan(options: FreeScanOptions = {}): Promise<F
   const started = Date.now();
   const rules = { ...scannerRules, ...options.rules };
   const router = new ProviderRouter(rules);
-  const universeResult = await withCache("universe:nasdaqtrader", 24 * 60 * 60 * 1000, getNasdaqUniverse);
+  const universeResult = await withCache(
+    "universe:nasdaqtrader",
+    24 * 60 * 60 * 1000,
+    getNasdaqUniverse,
+  );
   const universe = selectUniverse(universeResult.value, rules.maxUniverseSize);
-  const spy = await router.getDaily("SPY", 250);
-  const qqq = await router.getDaily("QQQ", 250);
-  if (!spy.candles || !qqq.candles) throw new Error("SPY and QQQ daily candles are required for the market filter.");
+  const [spy, qqq] = await Promise.all([
+    router.getDaily("SPY", 300),
+    router.getDaily("QQQ", 300),
+  ]);
+  if (!spy.candles || !qqq.candles) {
+    throw new Error("SPY and QQQ daily candles are required for leadership scoring.");
+  }
   const spyCloses = spy.candles.map((bar) => bar.close);
   const qqqCloses = qqq.candles.map((bar) => bar.close);
-  const spyEma21 = ema(spyCloses, 21)!;
-  const spyEma50 = ema(spyCloses, 50)!;
-  const qqqEma21 = ema(qqqCloses, 21)!;
-  const qqqEma50 = ema(qqqCloses, 50)!;
-  const marketScore = clamp(
-    25 * Number(spyCloses.at(-1)! > spyEma21) +
-    25 * Number(spyEma21 > spyEma50) +
-    25 * Number(qqqCloses.at(-1)! > qqqEma21) +
-    25 * Number(qqqEma21 > qqqEma50),
-  );
-  const spyReturn63 = changePercent(spyCloses, 63);
+  const benchmarks: BenchmarkReturns = {
+    spy5: changePercent(spyCloses, 5),
+    spy20: changePercent(spyCloses, 20),
+    spy63: changePercent(spyCloses, 63),
+    qqq5: changePercent(qqqCloses, 5),
+    qqq20: changePercent(qqqCloses, 20),
+    qqq63: changePercent(qqqCloses, 63),
+  };
+
   const sectorMetadata = await getSectorMetadataMap();
-  const sectorScores = new Map<string, number>();
-  const spyReturn20 = changePercent(spyCloses, 20);
   const sectorSnapshots = await Promise.all(SECTOR_ETFS.map(async (ticker) => {
-    const result = await router.getDaily(ticker, 100);
+    const result = await router.getDaily(ticker, 300);
     if (!result.candles) return null;
     const closes = result.candles.map((bar) => bar.close);
+    const change1d = changePercent(closes, 1);
+    const change5d = changePercent(closes, 5);
     const change20d = changePercent(closes, 20);
     const change63d = changePercent(closes, 63);
-    const relative20d = change20d - spyReturn20;
-    const relative63d = change63d - spyReturn63;
+    const relative20d = change20d - benchmarks.spy20;
+    const relative63d = change63d - benchmarks.spy63;
     const above21Day = closes.at(-1)! > ema(closes, 21)!;
     const above50Day = closes.at(-1)! > ema(closes, 50)!;
     const score = clamp(
       50 +
-      relative20d * 4 +
-      relative63d * 1.5 +
-      Number(above21Day) * 8 +
-      Number(above50Day) * 6,
+      change1d * 2 +
+      change5d * 2 +
+      relative20d * 3 +
+      relative63d +
+      Number(above21Day) * 6 +
+      Number(above50Day) * 4,
     );
-    sectorScores.set(ticker, score);
     return {
       ticker,
       sector: SECTOR_NAMES[ticker],
       score: Math.round(score),
+      change1d: Number(change1d.toFixed(2)),
+      change5d: Number(change5d.toFixed(2)),
       change20d: Number(change20d.toFixed(2)),
       change63d: Number(change63d.toFixed(2)),
       relative20d: Number(relative20d.toFixed(2)),
@@ -401,20 +404,33 @@ export async function runFreeDailyScan(options: FreeScanOptions = {}): Promise<F
       rank: index + 1,
       isLeading: index < 6,
     }));
-  const sectorRanks = new Map(
-    sectorLeadership.map((sector) => [sector.ticker, sector.rank]),
+  const sectorContexts = new Map<string, SectorContext>(
+    sectorLeadership.map((sector) => [
+      sector.ticker,
+      {
+        score: sector.score,
+        rank: sector.rank,
+        change1d: sector.change1d,
+        change5d: sector.change5d,
+        change20d: sector.change20d,
+        relative20d: sector.relative20d,
+      },
+    ]),
   );
+
   const failures: Array<{ symbol: string; reason: string }> = [];
-  const candidates: StockSetup[] = [];
-  let passedBaseFilters = 0;
   const broadCandidates: UniverseSymbol[] = [];
   const batchLimit = pLimit(4);
   const batchSize = 20;
-  const batches = Array.from({ length: Math.ceil(universe.length / batchSize) }, (_, index) =>
-    universe.slice(index * batchSize, (index + 1) * batchSize),
+  const batches = Array.from(
+    { length: Math.ceil(universe.length / batchSize) },
+    (_, index) => universe.slice(index * batchSize, (index + 1) * batchSize),
   );
   await Promise.all(batches.map((batch) => batchLimit(async () => {
-    const closesBySymbol = await router.getDailyCloseBatch(batch.map((symbol) => symbol.symbol), 250);
+    const closesBySymbol = await router.getDailyCloseBatch(
+      batch.map((symbol) => symbol.symbol),
+      300,
+    );
     for (const symbol of batch) {
       const closes = closesBySymbol.get(symbol.symbol)?.map((item) => item.close);
       if (!closes) {
@@ -424,65 +440,100 @@ export async function runFreeDailyScan(options: FreeScanOptions = {}): Promise<F
       }
     }
   })));
+
+  const histories: CandidateHistory[] = [];
   const detailLimit = pLimit(8);
   await Promise.all(broadCandidates.map((symbol) => detailLimit(async () => {
     try {
-      const result = await router.getDaily(symbol.symbol, 250);
+      const result = await router.getDaily(symbol.symbol, 300);
       if (!result.candles) {
         failures.push({ symbol: symbol.symbol, reason: "No valid detailed daily candle history" });
       } else {
-        const candles = result.candles;
-        const analyzed = analyzeSymbol(
-          symbol,
-          candles,
-          spyReturn63,
-          marketScore,
-          sectorMetadata,
-          sectorScores,
-          sectorRanks,
-        );
-        if (analyzed) {
-          passedBaseFilters += 1;
-          candidates.push(analyzed);
-        }
+        histories.push({ symbol, candles: result.candles });
       }
     } catch (error) {
-      failures.push({ symbol: symbol.symbol, reason: error instanceof Error ? error.message : "Unknown provider error" });
+      failures.push({
+        symbol: symbol.symbol,
+        reason: error instanceof Error ? error.message : "Unknown provider error",
+      });
     }
   })));
-  const preliminary = selectSectorBalancedCandidates(
-    candidates,
-    sectorLeadership,
-    rules.maxOptionsCandidates,
-    30,
-    12,
-  );
+
+  const initialCandidates = histories.flatMap(({ symbol, candles }) => {
+    const analyzed = analyzeSymbol(
+      symbol,
+      candles,
+      benchmarks,
+      sectorMetadata,
+      sectorContexts,
+    );
+    return analyzed ? [analyzed] : [];
+  });
+  const strongPeerCounts = new Map<string, number>();
+  for (const stock of initialCandidates) {
+    const strongPeer =
+      stock.rs >= 65 &&
+      stock.finalScore >= 60 &&
+      (stock.relative20Qqq > 0 || stock.relative20Spy > 0);
+    if (strongPeer) {
+      strongPeerCounts.set(
+        stock.canonicalTheme,
+        (strongPeerCounts.get(stock.canonicalTheme) ?? 0) + 1,
+      );
+    }
+  }
+
+  const candidates = histories.flatMap(({ symbol, candles }) => {
+    const metadata = getSectorTheme(symbol.symbol, symbol.name, sectorMetadata);
+    const preliminary = initialCandidates.find((stock) => stock.ticker === symbol.symbol);
+    const canonicalTheme = preliminary?.canonicalTheme ?? metadata.theme;
+    const peerCount = Math.max(0, (strongPeerCounts.get(canonicalTheme) ?? 0) - 1);
+    const analyzed = analyzeSymbol(
+      symbol,
+      candles,
+      benchmarks,
+      sectorMetadata,
+      sectorContexts,
+      peerCount,
+    );
+    return analyzed ? [analyzed] : [];
+  });
+
+  const preliminary = [...candidates]
+    .sort(leaderComparator)
+    .slice(0, rules.maxOptionsCandidates);
   const optionsLimit = pLimit(4);
   await Promise.all(preliminary.map((stock) => optionsLimit(async () => {
-    const options = await getOptionsConfluence(stock.ticker, stock.plan.entryHigh);
-    applyOptionsScoring(stock, options);
+    const optionsData = await getOptionsConfluence(stock.ticker, stock.plan.entryHigh);
+    applyOptionsScoring(stock, optionsData);
   })));
 
-  const topSetups = selectSectorBalancedCandidates(
-    preliminary,
-    sectorLeadership,
-    rules.maxScannerResults,
-    5,
-    2,
-  )
-    .sort((left, right) =>
-      (left.sectorRank ?? 99) - (right.sectorRank ?? 99) ||
-      right.finalScore - left.finalScore ||
-      right.rs - left.rs,
-    )
+  const topSetups = preliminary
+    .sort(leaderComparator)
+    .slice(0, rules.maxScannerResults)
     .map((stock, index) => ({
       ...stock,
       rank: index + 1,
       grade: gradeScore(stock.finalScore),
-      status: stock.extension === "Avoid / Chasing" ? "Rejected" : stock.finalScore >= 78 ? "Actionable" : "Watch only",
     } satisfies StockSetup));
-  const actionable = topSetups.filter((stock) => stock.status === "Actionable" && stock.extension !== "Avoid / Chasing");
-  const watchlist = (actionable.length >= 3 ? actionable : topSetups.filter((stock) => stock.status !== "Rejected")).slice(0, rules.maxWatchlistItems);
+
+  const topFive = topSetups.slice(0, 5);
+  if (topFive.some((stock) => {
+    const outperforming =
+      stock.relative5Spy > 0 ||
+      stock.relative5Qqq > 0 ||
+      stock.relative20Spy > 0 ||
+      stock.relative20Qqq > 0 ||
+      stock.relative63Spy > 0 ||
+      stock.relative63Qqq > 0;
+    return !outperforming || stock.themeScore < 11;
+  })) {
+    throw new Error("Leadership ranking invariant failed: top five contains a non-leading stock or weak theme.");
+  }
+
+  const watchlist = topSetups
+    .filter((stock) => stock.status !== "Rejected" && stock.setup !== "Extended / Wait")
+    .slice(0, rules.maxWatchlistItems);
   const result: FreeScanResult = {
     mode: "free-eod",
     scanId: crypto.randomUUID(),
@@ -491,7 +542,7 @@ export async function runFreeDailyScan(options: FreeScanOptions = {}): Promise<F
     durationMs: Date.now() - started,
     universeCount: universeResult.value.length,
     scannedCount: universe.length,
-    passedBaseFilters,
+    passedBaseFilters: candidates.length,
     optionsEligibleCount: topSetups.filter((stock) => passesOptionsGate(stock, rules)).length,
     optionsRejectedCount: topSetups.filter((stock) => !passesOptionsGate(stock, rules)).length,
     optionsGate: {
@@ -505,7 +556,7 @@ export async function runFreeDailyScan(options: FreeScanOptions = {}): Promise<F
     failures: failures.slice(0, 100),
     providerStats: {
       universeProvider: "nasdaqtrader",
-      dailyPrimary: "yahoo-batch prefilter",
+      dailyPrimary: "yahoo-batch leadership prefilter",
       dailyFallback: "yahoo/stooq detail",
       cacheHits: router.cacheHits + Number(universeResult.hit),
       cacheMisses: router.cacheMisses + Number(!universeResult.hit),
@@ -514,7 +565,8 @@ export async function runFreeDailyScan(options: FreeScanOptions = {}): Promise<F
       failedSymbols: failures.length,
       warnings: [
         ...router.warnings,
-        "Options quality is ranked rather than used as a blanket exclusion; only the strongest overall candidates are shown.",
+        "Ranked by market leadership, theme strength, weekly 8-week EMA structure, daily setup quality, and tradability.",
+        "Options quality contributes to tradability but does not blanket-exclude otherwise strong leaders.",
       ],
     },
     sectorLeadership,
