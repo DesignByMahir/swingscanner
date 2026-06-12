@@ -70,14 +70,21 @@ jobs:
         env:
           NEXT_PUBLIC_SUPABASE_URL: ${{ vars.NEXT_PUBLIC_SUPABASE_URL }}
           NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ vars.NEXT_PUBLIC_SUPABASE_ANON_KEY }}
-      - run: npx electron-builder --mac dmg zip --x64 --arm64 --publish never --config electron-builder.config.cjs
+      - name: Build signed Mac installers
+        if: ${{ !inputs.unsigned_manual_mac }}
+        run: npx electron-builder --mac dmg zip --x64 --arm64 --publish never --config electron-builder.config.cjs
         env:
           CSC_LINK: ${{ secrets.MACOS_CSC_LINK }}
           CSC_KEY_PASSWORD: ${{ secrets.MACOS_CSC_KEY_PASSWORD }}
           APPLE_ID: ${{ secrets.APPLE_ID }}
           APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
-          ALLOW_UNSIGNED_MAC: ${{ inputs.unsigned_manual_mac }}
+      - name: Build unsigned manual-reinstall Mac installers
+        if: ${{ inputs.unsigned_manual_mac }}
+        run: npx electron-builder --mac dmg zip --x64 --arm64 --publish never --config electron-builder.config.cjs
+        env:
+          ALLOW_UNSIGNED_MAC: "true"
+          CSC_IDENTITY_AUTO_DISCOVERY: "false"
       - name: Verify signing, notarization, and updater artifacts
         if: ${{ !inputs.unsigned_manual_mac }}
         shell: bash
