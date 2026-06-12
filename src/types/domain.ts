@@ -230,6 +230,7 @@ export interface TickerResearchResult {
   optionOpenInterest: number | null;
   optionVolume: number | null;
   optionsTradabilityScore: number | null;
+  candles: DailyCandle[];
   setup: StockSetup | null;
   summary: string;
 }

@@ -2,6 +2,7 @@ import { promises as fs } from "node:fs";
 import path from "node:path";
 import { z } from "zod";
 import type { DailyReflection } from "@/types/domain";
+import { getAccountDataDir } from "@/lib/local-account-store";
 
 export const dailyReflectionSchema = z.object({
   id: z.string().min(1).max(100),
@@ -15,21 +16,24 @@ export const dailyReflectionSchema = z.object({
 
 export const dailyReflectionsSchema = z.array(dailyReflectionSchema).max(2000);
 const dataDir = process.env.SWINGSCANNER_DATA_DIR ?? path.resolve(".data");
-const reflectionPath = path.join(dataDir, "daily-reflections.json");
+function reflectionPath(accountId?: string | null) {
+  return path.join(accountId ? getAccountDataDir(accountId) : dataDir, "daily-reflections.json");
+}
 
-export async function readDailyReflections(): Promise<DailyReflection[]> {
+export async function readDailyReflections(accountId?: string | null): Promise<DailyReflection[]> {
   try {
-    return dailyReflectionsSchema.parse(JSON.parse(await fs.readFile(reflectionPath, "utf8")));
+    return dailyReflectionsSchema.parse(JSON.parse(await fs.readFile(reflectionPath(accountId), "utf8")));
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code === "ENOENT") return [];
     throw error;
   }
 }
 
-export async function writeDailyReflections(reflections: DailyReflection[]) {
+export async function writeDailyReflections(reflections: DailyReflection[], accountId?: string | null) {
   const validated = dailyReflectionsSchema.parse(reflections);
-  await fs.mkdir(dataDir, { recursive: true });
-  const temporaryPath = `${reflectionPath}.tmp`;
+  const target = reflectionPath(accountId);
+  await fs.mkdir(path.dirname(target), { recursive: true });
+  const temporaryPath = `${target}.tmp`;
   await fs.writeFile(temporaryPath, JSON.stringify(validated, null, 2), "utf8");
-  await fs.rename(temporaryPath, reflectionPath);
+  await fs.rename(temporaryPath, target);
 }

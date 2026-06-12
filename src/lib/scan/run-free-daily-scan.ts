@@ -33,6 +33,7 @@ import {
   type LeaderEvidence,
   type SectorContext,
 } from "./leader-scoring";
+import { selectSectorBalanced } from "./sector-balanced-selection";
 
 export interface FreeScanOptions {
   rules?: Partial<ScannerRules>;
@@ -499,18 +500,27 @@ export async function runFreeDailyScan(options: FreeScanOptions = {}): Promise<F
     return analyzed ? [analyzed] : [];
   });
 
-  const preliminary = [...candidates]
-    .sort(leaderComparator)
-    .slice(0, rules.maxOptionsCandidates);
+  const rankedCandidates = [...candidates].sort(leaderComparator);
+  const sectorOrder = sectorLeadership.map((sector) => sector.sector);
+  const preliminary = selectSectorBalanced(rankedCandidates, sectorOrder, {
+    limit: rules.maxOptionsCandidates,
+    preserveTop: 25,
+    reservePerSector: 10,
+  });
   const optionsLimit = pLimit(4);
   await Promise.all(preliminary.map((stock) => optionsLimit(async () => {
     const optionsData = await getOptionsConfluence(stock.ticker, stock.plan.entryHigh);
     applyOptionsScoring(stock, optionsData);
   })));
 
-  const topSetups = preliminary
-    .sort(leaderComparator)
-    .slice(0, rules.maxScannerResults)
+  const rankedWithOptions = preliminary.sort(leaderComparator);
+  const sectorCap = Math.max(5, Math.ceil(rules.maxScannerResults * 0.18));
+  const topSetups = selectSectorBalanced(rankedWithOptions, sectorOrder, {
+    limit: rules.maxScannerResults,
+    preserveTop: 5,
+    reservePerSector: 3,
+    maxPerSector: sectorCap,
+  })
     .map((stock, index) => ({
       ...stock,
       rank: index + 1,
@@ -567,6 +577,7 @@ export async function runFreeDailyScan(options: FreeScanOptions = {}): Promise<F
         ...router.warnings,
         "Ranked by market leadership, theme strength, weekly 8-week EMA structure, daily setup quality, and tradability.",
         "Options quality contributes to tradability but does not blanket-exclude otherwise strong leaders.",
+        "The final list preserves the strongest market leaders while reserving qualified setups across all represented sectors.",
       ],
     },
     sectorLeadership,

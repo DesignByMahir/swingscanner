@@ -31,6 +31,15 @@ async function main() {
     rs: stock.rs,
     extension: stock.extension,
   })));
+  console.table(Object.entries(
+    result.topSetups.reduce<Record<string, number>>((counts, stock) => {
+      counts[stock.sector] = (counts[stock.sector] ?? 0) + 1;
+      return counts;
+    }, {}),
+  ).sort((left, right) => right[1] - left[1]).map(([sector, count]) => ({
+    sector,
+    count,
+  })));
 }
 
 main().catch((error) => {

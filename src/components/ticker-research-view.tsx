@@ -7,12 +7,12 @@ import {
   SpinnerGap,
 } from "@phosphor-icons/react";
 import Link from "next/link";
-import { FormEvent, useState } from "react";
+import { FormEvent, useMemo, useState } from "react";
 import { ScoreBadge, StatusBadge } from "@/components/shared";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { compact, money, percent } from "@/lib/format";
-import type { TickerResearchResult } from "@/types/domain";
+import type { DailyCandle, TickerResearchResult } from "@/types/domain";
 
 type ResearchResponse =
   | { ok: true; data: TickerResearchResult }
@@ -37,6 +37,112 @@ function Metric({
         <p className="mt-1 text-[11px] text-muted-foreground">{detail}</p>
       )}
     </div>
+  );
+}
+
+function calculateEma(values: number[], period: number) {
+  const result: Array<number | null> = [];
+  let current: number | null = null;
+  const multiplier = 2 / (period + 1);
+  values.forEach((value, index) => {
+    if (index < period - 1) result.push(null);
+    else if (index === period - 1) {
+      current = values.slice(0, period).reduce((sum, item) => sum + item, 0) / period;
+      result.push(current);
+    } else {
+      current = value * multiplier + current! * (1 - multiplier);
+      result.push(current);
+    }
+  });
+  return result;
+}
+
+function aggregateWeekly(candles: DailyCandle[]) {
+  const groups = new Map<string, DailyCandle[]>();
+  candles.forEach((candle) => {
+    const date = new Date(`${candle.date}T00:00:00Z`);
+    const day = date.getUTCDay();
+    date.setUTCDate(date.getUTCDate() - (day === 0 ? 6 : day - 1));
+    const key = date.toISOString().slice(0, 10);
+    groups.set(key, [...(groups.get(key) ?? []), candle]);
+  });
+  return [...groups.entries()].map(([date, bars]) => ({
+    date,
+    open: bars[0].open,
+    high: Math.max(...bars.map((bar) => bar.high)),
+    low: Math.min(...bars.map((bar) => bar.low)),
+    close: bars.at(-1)!.close,
+    volume: bars.reduce((sum, bar) => sum + bar.volume, 0),
+  }));
+}
+
+function ResearchChart({ result }: { result: TickerResearchResult }) {
+  const [timeframe, setTimeframe] = useState<"daily" | "weekly">("daily");
+  const candles = useMemo(() => {
+    const source = timeframe === "daily" ? result.candles : aggregateWeekly(result.candles);
+    return source.slice(timeframe === "daily" ? -90 : -80);
+  }, [result.candles, timeframe]);
+  const closes = candles.map((candle) => candle.close);
+  const ema8 = calculateEma(closes, 8);
+  const ema21 = calculateEma(closes, 21);
+  const ema50 = calculateEma(closes, 50);
+  const width = 1000;
+  const height = 500;
+  const left = 18;
+  const right = 76;
+  const top = 20;
+  const priceBottom = 350;
+  const volumeTop = 375;
+  const volumeBottom = 472;
+  const plotRight = width - right;
+  const plotWidth = plotRight - left;
+  const prices = candles.flatMap((candle) => [candle.low, candle.high]);
+  const minPrice = Math.min(...prices) * 0.985;
+  const maxPrice = Math.max(...prices) * 1.015;
+  const maxVolume = Math.max(...candles.map((candle) => candle.volume), 1);
+  const x = (index: number) => left + (index + 0.5) * plotWidth / candles.length;
+  const y = (price: number) => top + (maxPrice - price) / (maxPrice - minPrice) * (priceBottom - top);
+  const candleWidth = Math.max(2, plotWidth / candles.length * 0.62);
+  const gridPrices = Array.from({ length: 6 }, (_, index) => minPrice + (maxPrice - minPrice) * index / 5);
+  const pathFor = (values: Array<number | null>) => values
+    .map((value, index) => value == null ? null : `${index === 0 ? "M" : "L"}${x(index).toFixed(1)},${y(value).toFixed(1)}`)
+    .filter(Boolean)
+    .join(" ");
+
+  return (
+    <section className="panel overflow-hidden">
+      <div className="flex flex-wrap items-center justify-between gap-3 border-b p-4">
+        <div>
+          <p className="text-sm font-medium">{result.ticker} completed {timeframe} chart</p>
+          <p className="mt-1 text-xs text-muted-foreground">{candles.length} candles through {result.marketDate} with volume</p>
+        </div>
+        <div className="flex gap-2">
+          <Button size="sm" variant={timeframe === "daily" ? "default" : "outline"} onClick={() => setTimeframe("daily")}>Daily</Button>
+          <Button size="sm" variant={timeframe === "weekly" ? "default" : "outline"} onClick={() => setTimeframe("weekly")}>Weekly</Button>
+        </div>
+      </div>
+      <div className="overflow-x-auto p-3">
+        <svg viewBox={`0 0 ${width} ${height}`} className="min-w-[760px] w-full" role="img" aria-label={`${result.ticker} ${timeframe} candlestick chart`}>
+          <rect width={width} height={height} fill="var(--chart-bg)" rx="10" />
+          {gridPrices.map((price) => <g key={price}><line x1={left} x2={plotRight} y1={y(price)} y2={y(price)} stroke="var(--chart-grid)" strokeDasharray="3 5" /><text x={plotRight + 8} y={y(price) + 4} fill="var(--chart-label)" fontSize="11" fontFamily="monospace">{price.toFixed(2)}</text></g>)}
+          {candles.map((candle, index) => {
+            const rising = candle.close >= candle.open;
+            const color = rising ? "var(--chart-up)" : "var(--chart-down)";
+            const bodyTop = y(Math.max(candle.open, candle.close));
+            const bodyHeight = Math.max(1.5, Math.abs(y(candle.open) - y(candle.close)));
+            const volumeHeight = candle.volume / maxVolume * (volumeBottom - volumeTop);
+            return <g key={candle.date}><title>{`${candle.date} O ${candle.open.toFixed(2)} H ${candle.high.toFixed(2)} L ${candle.low.toFixed(2)} C ${candle.close.toFixed(2)} V ${compact(candle.volume)}`}</title><line x1={x(index)} x2={x(index)} y1={y(candle.high)} y2={y(candle.low)} stroke={color} strokeWidth="1.2" /><rect x={x(index) - candleWidth / 2} y={bodyTop} width={candleWidth} height={bodyHeight} fill={color} rx="0.8" /><rect x={x(index) - candleWidth / 2} y={volumeBottom - volumeHeight} width={candleWidth} height={volumeHeight} fill={color} opacity="0.58" /></g>;
+          })}
+          <line x1={left} x2={plotRight} y1={volumeTop - 8} y2={volumeTop - 8} stroke="var(--chart-grid)" />
+          <text x={left + 5} y={volumeTop + 5} fill="var(--chart-label)" fontSize="10" fontFamily="monospace">VOLUME</text>
+          <path d={pathFor(ema8)} fill="none" stroke="var(--chart-ema-fast)" strokeWidth="1.8" />
+          <path d={pathFor(ema21)} fill="none" stroke="var(--chart-ema-mid)" strokeWidth="1.6" />
+          <path d={pathFor(ema50)} fill="none" stroke="var(--chart-ema-slow)" strokeWidth="1.5" />
+          {[0, Math.floor(candles.length / 2), candles.length - 1].map((index) => <text key={index} x={x(index)} y={492} textAnchor="middle" fill="var(--chart-label)" fontSize="10" fontFamily="monospace">{candles[index].date.slice(5)}</text>)}
+        </svg>
+      </div>
+      <div className="chart-legend flex flex-wrap gap-3 border-t p-3 font-mono text-[10px]"><span className="chart-fast">8 EMA</span><span className="chart-mid">21 EMA</span><span className="chart-slow">50 EMA</span><span className="text-muted-foreground">Chart loads for every researched ticker</span></div>
+    </section>
   );
 }
 
@@ -168,6 +274,8 @@ export function TickerResearchView() {
             </div>
           </section>
 
+          <ResearchChart result={result} />
+
           <section className="panel p-5">
             <div className="flex items-center gap-2">
               <ChartLine className="text-primary" weight="bold" />
@@ -274,4 +382,3 @@ export function TickerResearchView() {
     </div>
   );
 }
-

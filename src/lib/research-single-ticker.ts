@@ -138,6 +138,7 @@ export async function researchSingleTicker(
     theme,
     sectorStrength: Math.round(sectorStrength),
     ...options,
+    candles: stockResult.candles.slice(-260),
     setup: rankedSetup,
     summary: rankedSetup
       ? `${rankedSetup.setupLabel} detected and graded ${rankedSetup.grade} with a score of ${rankedSetup.finalScore}.`

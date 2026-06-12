@@ -211,15 +211,14 @@ export function AppShell({ children }: { children: React.ReactNode }) {
               <DialogDescription>Choose the visual theme. Layout, scan logic, and data stay unchanged.</DialogDescription>
             </DialogHeader>
             <div className="border-b p-5">
-              <div className="flex items-center gap-2"><UserCircle className="text-primary" weight="fill" /><p className="text-sm font-semibold">Account sync</p>{account.username && <span className="ml-auto font-mono text-[10px] text-positive">@{account.username}</span>}</div>
-              {!account.configured ? (
-                <p className="mt-2 text-xs text-muted-foreground">Cloud accounts are not configured. Local journal and scanner data continue to work normally.</p>
-              ) : account.userId ? (
-                <div className="mt-3 flex items-center justify-between gap-3"><p className="text-xs text-muted-foreground">Journal, reflections, and flagged setups sync privately across signed-in devices.</p><Button variant="outline" size="sm" onClick={() => account.signOut()}>Sign out</Button></div>
+              <div className="flex items-center gap-2"><UserCircle className="text-primary" weight="fill" /><p className="text-sm font-semibold">Local account</p>{account.username && <span className="ml-auto font-mono text-[10px] text-positive">@{account.username}</span>}</div>
+              {account.userId ? (
+                <div className="mt-3 flex items-center justify-between gap-3"><p className="text-xs text-muted-foreground">This account has its own journal, reflections, and flagged setups on this device.</p><Button variant="outline" size="sm" onClick={() => account.signOut()}>Sign out</Button></div>
               ) : (
                 <>
-                  <div className="mt-3 grid gap-2 sm:grid-cols-2"><Input placeholder="Username" autoComplete="username" value={accountName} onChange={(event) => setAccountName(event.target.value)} /><Input placeholder="Password" type="password" autoComplete="current-password" value={accountPassword} onChange={(event) => setAccountPassword(event.target.value)} /></div>
-                  <div className="mt-2 flex gap-2"><Button size="sm" onClick={async () => setAccountMessage(await account.signIn(accountName, accountPassword) ?? "Signed in.")}>Sign in</Button><Button size="sm" variant="outline" onClick={async () => setAccountMessage(await account.register(accountName, accountPassword) ?? "Account registered.")}>Register</Button></div>
+                  <p className="mt-2 text-xs text-muted-foreground">Use a username and exactly six numbers. The PIN is salted and hashed, never stored as plain text.</p>
+                  <div className="mt-3 grid gap-2 sm:grid-cols-2"><Input placeholder="Username" autoComplete="username" value={accountName} onChange={(event) => setAccountName(event.target.value)} /><Input placeholder="6-number PIN" type="password" inputMode="numeric" pattern="[0-9]*" maxLength={6} autoComplete="current-password" value={accountPassword} onChange={(event) => setAccountPassword(event.target.value.replace(/\D/g, "").slice(0, 6))} /></div>
+                  <div className="mt-2 flex gap-2"><Button size="sm" disabled={accountPassword.length !== 6} onClick={async () => setAccountMessage(await account.signIn(accountName, accountPassword) ?? "Signed in.")}>Sign in</Button><Button size="sm" variant="outline" disabled={accountPassword.length !== 6} onClick={async () => setAccountMessage(await account.register(accountName, accountPassword) ?? "Account created.")}>Create Account</Button></div>
                   {accountMessage && <p className="mt-2 text-xs text-muted-foreground">{accountMessage}</p>}
                 </>
               )}
