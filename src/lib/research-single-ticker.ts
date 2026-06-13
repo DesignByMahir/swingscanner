@@ -14,10 +14,26 @@ import {
 import { clamp } from "@/lib/scoring";
 import type { BenchmarkReturns, SectorContext } from "@/lib/scan/leader-scoring";
 import type {
+  DailyCandle,
   StockSetup,
   TickerResearchResult,
   UniverseSymbol,
 } from "@/types/domain";
+
+async function getReliableDaily(
+  router: ProviderRouter,
+  ticker: string,
+  primaryLimit: number,
+  fallbackLimit = 250,
+): Promise<{ candles: DailyCandle[] | null; provider: string }> {
+  const primary = await router.getDaily(ticker, primaryLimit);
+  if (primary.candles?.length) return primary;
+  const fallback = await router.getDaily(ticker, fallbackLimit);
+  return {
+    candles: fallback.candles,
+    provider: fallback.candles ? `${fallback.provider}-fallback` : primary.provider,
+  };
+}
 
 export async function researchSingleTicker(
   rawTicker: string,
@@ -46,9 +62,9 @@ export async function researchSingleTicker(
   } satisfies UniverseSymbol;
 
   const [stockResult, spyResult, qqqResult, sectorMetadata] = await Promise.all([
-    router.getDaily(ticker, 300),
-    router.getDaily("SPY", 250),
-    router.getDaily("QQQ", 250),
+    getReliableDaily(router, ticker, 300),
+    getReliableDaily(router, "SPY", 250, 300),
+    getReliableDaily(router, "QQQ", 250, 300),
     getSectorMetadataMap(),
   ]);
   if (!stockResult.candles?.length) {
@@ -63,7 +79,7 @@ export async function researchSingleTicker(
     symbol.name,
     sectorMetadata,
   );
-  const sectorResult = await router.getDaily(sectorTicker, 100);
+  const sectorResult = await getReliableDaily(router, sectorTicker, 100, 250);
   const spyCloses = spyResult.candles.map((bar) => bar.close);
   const qqqCloses = qqqResult.candles.map((bar) => bar.close);
   const sectorStrength = sectorResult.candles

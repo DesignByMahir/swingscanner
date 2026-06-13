@@ -45,7 +45,9 @@ export async function getSetupDetail(ticker: string): Promise<SetupDetail | null
   if (!setup) return null;
 
   const router = new ProviderRouter({ enableYahooFallback: true, dailyCacheHours: 20 });
-  const result = await router.getDaily(setup.ticker, 500);
+  // The scanner and ticker research both cache 300 sessions. Reusing that
+  // history prevents a second provider request from making a valid setup 404.
+  const result = await router.getDaily(setup.ticker, 300);
   if (!result.candles) return null;
   const closes = result.candles.map((candle) => candle.close);
   const ema8 = emaSeries(closes, 8);

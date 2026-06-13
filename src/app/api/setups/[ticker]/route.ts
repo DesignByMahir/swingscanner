@@ -5,5 +5,5 @@ export async function GET(_: Request, context: { params: Promise<{ ticker: strin
   const ticker = (await context.params).ticker.toUpperCase();
   if (!/^[A-Z.-]{1,8}$/.test(ticker)) return fail("INVALID_SYMBOL", "Provide a valid symbol.", 400);
   const detail = await getSetupDetail(ticker);
-  return detail ? ok(detail) : fail("SETUP_NOT_FOUND", "This ticker is not in the latest ranked scan.", 404);
+  return detail ? ok(detail) : fail("SETUP_NOT_FOUND", "Chart history is temporarily unavailable for this ticker.", 404);
 }
