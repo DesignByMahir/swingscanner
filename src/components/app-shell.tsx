@@ -118,6 +118,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     latestVersion: null,
     updateDownloaded: false,
     releaseNotes: null,
+    platform: "web",
   });
   const [desktopAvailable, setDesktopAvailable] = useState(false);
   const account = useSwingAccount();
@@ -178,6 +179,12 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
   const handleRestartToUpdate = () => {
     window.swingScannerDesktop?.restartToUpdate();
+  };
+
+  const handleInstallUpdateFromFile = async () => {
+    const desktop = window.swingScannerDesktop;
+    if (!desktop) return;
+    setUpdateState(await desktop.installUpdateFromFile());
   };
 
   return (
@@ -343,7 +350,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             <div className="border-t p-5">
               <div className="flex items-center justify-between gap-3">
                 <div>
-                  <p className="text-sm font-semibold">Desktop updater debug</p>
+                  <p className="text-sm font-semibold">{updateState.platform === "darwin" ? "Install update from file" : "Desktop updater debug"}</p>
                   <p className="mt-1 text-xs text-muted-foreground">{updateState.message}</p>
                 </div>
                 <span className="rounded-full border px-2.5 py-1 font-mono text-[9px] uppercase tracking-[0.12em] text-muted-foreground">{updateState.status}</span>
@@ -355,14 +362,25 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                 <div className="rounded-xl border bg-background/35 p-3"><p className="text-[9px] uppercase tracking-[0.12em] text-muted-foreground">Ready</p><p className={cn("mt-1 font-mono text-xs", updateState.updateDownloaded ? "text-positive" : "text-muted-foreground")}>{updateState.updateDownloaded ? "Yes" : "No"}</p></div>
               </div>
               <div className="mt-3 flex gap-2">
-                <Button
-                  disabled={!desktopAvailable || updateState.status === "checking" || updateState.status === "downloading"}
-                  variant="outline"
-                  className="flex-1 rounded-full"
-                  onClick={handleCheckForUpdates}
-                >
-                  Check for updates
-                </Button>
+                {updateState.platform === "darwin" ? (
+                  <Button
+                    disabled={!desktopAvailable}
+                    variant="outline"
+                    className="flex-1 rounded-full"
+                    onClick={handleInstallUpdateFromFile}
+                  >
+                    Choose update file
+                  </Button>
+                ) : (
+                  <Button
+                    disabled={!desktopAvailable || updateState.status === "checking" || updateState.status === "downloading"}
+                    variant="outline"
+                    className="flex-1 rounded-full"
+                    onClick={handleCheckForUpdates}
+                  >
+                    Check for updates
+                  </Button>
+                )}
                 {updateState.updateDownloaded && (
                   <Button className="flex-1 rounded-full" onClick={handleRestartToUpdate}>
                     Restart to update

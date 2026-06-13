@@ -1,4 +1,4 @@
-const { app, BrowserWindow, ipcMain, shell } = require("electron");
+const { app, BrowserWindow, dialog, ipcMain, shell } = require("electron");
 const { spawn } = require("node:child_process");
 const fs = require("node:fs");
 const http = require("node:http");
@@ -29,6 +29,7 @@ let updateState = {
   latestVersion: null,
   updateDownloaded: false,
   releaseNotes: null,
+  platform: process.platform,
 };
 
 function openExternalBrowser(target) {
@@ -208,6 +209,14 @@ function configureUpdater() {
 }
 
 async function checkForUpdates() {
+  if (process.platform === "darwin") {
+    return sendUpdateState({
+      status: "manual-file",
+      message: "Choose a SwingScanner update file from Downloads",
+      progress: null,
+      error: null,
+    });
+  }
   if (!app.isPackaged) {
     log.info("[updater] skipped update check in development", {
       currentVersion: app.getVersion(),
@@ -223,6 +232,85 @@ async function checkForUpdates() {
     sendUpdateState({ status: "error", message: "Update check failed", error: error?.message ?? String(error) });
   }
   return updateState;
+}
+
+function compareVersions(left, right) {
+  const leftParts = left.split(".").map(Number);
+  const rightParts = right.split(".").map(Number);
+  for (let index = 0; index < Math.max(leftParts.length, rightParts.length); index += 1) {
+    const difference = (leftParts[index] ?? 0) - (rightParts[index] ?? 0);
+    if (difference !== 0) return difference;
+  }
+  return 0;
+}
+
+async function installUpdateFromFile() {
+  if (process.platform !== "darwin") {
+    return sendUpdateState({
+      status: "error",
+      message: "File updates are available on macOS only",
+      error: "Use Check for updates on Windows.",
+    });
+  }
+
+  const result = await dialog.showOpenDialog(mainWindow, {
+    title: "Choose a SwingScanner update",
+    defaultPath: app.getPath("downloads"),
+    buttonLabel: "Open update",
+    properties: ["openFile"],
+    filters: [{ name: "SwingScanner Mac update", extensions: ["dmg", "zip"] }],
+  });
+  if (result.canceled || !result.filePaths[0]) return updateState;
+
+  const updatePath = result.filePaths[0];
+  const fileName = path.basename(updatePath);
+  const match = /^SwingScanner-(\d+\.\d+\.\d+)-mac-(arm64|x64)\.(dmg|zip)$/i.exec(fileName);
+  if (!match) {
+    return sendUpdateState({
+      status: "error",
+      message: "That is not a valid SwingScanner Mac update",
+      error: "Choose the original SwingScanner Mac DMG or ZIP file.",
+    });
+  }
+
+  const [, version, architecture] = match;
+  if (compareVersions(version, app.getVersion()) <= 0) {
+    return sendUpdateState({
+      status: "error",
+      message: `SwingScanner v${version} is not newer than v${app.getVersion()}`,
+      error: "Choose a newer update file.",
+    });
+  }
+  if (architecture !== process.arch) {
+    return sendUpdateState({
+      status: "error",
+      message: `This Mac needs the ${process.arch} update`,
+      error: `The selected file is for ${architecture} Macs.`,
+    });
+  }
+
+  const openError = await shell.openPath(updatePath);
+  if (openError) {
+    log.error("[updater] failed to open local update", { updatePath, openError });
+    return sendUpdateState({
+      status: "error",
+      message: "The update file could not be opened",
+      error: openError,
+    });
+  }
+
+  log.info("[updater] opened local update", {
+    currentVersion: app.getVersion(),
+    selectedVersion: version,
+    updatePath,
+  });
+  return sendUpdateState({
+    status: "manual-file-opened",
+    message: `SwingScanner v${version} opened. Replace SwingScanner in Applications, then reopen it.`,
+    latestVersion: version,
+    progress: null,
+    error: null,
+  });
 }
 
 function restartToInstallUpdate() {
@@ -298,9 +386,12 @@ app.whenReady().then(async () => {
   else log.info("[updater] real updater logic disabled for local development");
   ipcMain.handle("updates:get-state", () => updateState);
   ipcMain.handle("updates:check", checkForUpdates);
+  ipcMain.handle("updates:install-from-file", installUpdateFromFile);
   ipcMain.on("restart-to-install-update", restartToInstallUpdate);
   await createWindow();
-  if (app.isPackaged) setTimeout(() => void checkForUpdates(), 15_000);
+  if (app.isPackaged && process.platform !== "darwin") {
+    setTimeout(() => void checkForUpdates(), 15_000);
+  }
   app.on("activate", () => {
     if (BrowserWindow.getAllWindows().length === 0) void createWindow();
   });
