@@ -6,6 +6,7 @@ import {
   Binoculars,
   BookOpenText,
   Brain,
+  Briefcase,
   Check,
   ChartLineUp,
   GearSix,
@@ -42,6 +43,7 @@ import { RouteMotion } from "@/components/route-motion";
 const navItems = [
   { href: "/scanner", label: "Live Scanner", icon: Binoculars },
   { href: "/ticker-research", label: "Ticker Research", icon: MagnifyingGlass },
+  { href: "/due-diligence", label: "Due Diligence", icon: Briefcase },
   { href: "/watchlist", label: "Morning Watchlist", icon: Star },
   { href: "/sectors", label: "Sector Pulse", icon: ChartLineUp },
   { href: "/setup-coach", label: "Setup Coach", icon: Brain },

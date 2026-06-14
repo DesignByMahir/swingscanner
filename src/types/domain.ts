@@ -235,6 +235,55 @@ export interface TickerResearchResult {
   summary: string;
 }
 
+export type DueDiligencePillarId = "financials" | "outlook" | "contracts" | "sector";
+
+export interface DueDiligenceMetric {
+  label: string;
+  value: number | null;
+  display: string;
+  interpretation: string;
+}
+
+export interface DueDiligencePillar {
+  id: DueDiligencePillarId;
+  label: string;
+  score: number | null;
+  weight: number;
+  summary: string;
+  evidence: string[];
+}
+
+export interface DueDiligenceNewsItem {
+  id: string;
+  title: string;
+  publisher: string;
+  url: string;
+  publishedAt: string;
+  isContractSignal: boolean;
+}
+
+export interface DueDiligenceResult {
+  ticker: string;
+  company: string;
+  instrumentType: string;
+  researchedAt: string;
+  provider: string;
+  businessSummary: string;
+  website: string | null;
+  sector: string;
+  industry: string;
+  sectorTicker: string;
+  overallScore: number;
+  grade: "A+" | "A" | "B" | "Watch" | "Avoid";
+  verdict: string;
+  metrics: DueDiligenceMetric[];
+  pillars: DueDiligencePillar[];
+  bullCase: string[];
+  risks: string[];
+  news: DueDiligenceNewsItem[];
+  warnings: string[];
+}
+
 export interface SectorPerformance {
   rank: number;
   ticker: string;
