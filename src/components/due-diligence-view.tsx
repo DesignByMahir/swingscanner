@@ -7,25 +7,34 @@ import {
   Buildings,
   ChartLineUp,
   CheckCircle,
+  Crown,
   MagnifyingGlass,
   PaperPlaneTilt,
   SpinnerGap,
   TrendUp,
   WarningCircle,
 } from "@phosphor-icons/react";
-import { FormEvent, useState } from "react";
+import { FormEvent, useEffect, useState } from "react";
 import { Conversation, ConversationContent, ConversationEmptyState, ConversationScrollButton } from "@/components/ai-elements/conversation";
 import { Message, MessageContent, MessageResponse } from "@/components/ai-elements/message";
 import { ScoreBadge, StatusBadge } from "@/components/shared";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
-import type { DueDiligencePillar, DueDiligenceResult } from "@/types/domain";
+import type {
+  DueDiligenceLeaderboard,
+  DueDiligenceLeaderboardEntry,
+  DueDiligencePillar,
+  DueDiligenceResult,
+} from "@/types/domain";
 
 type ReportResponse =
   | { ok: true; data: DueDiligenceResult }
   | { ok: false; error: { message: string } };
 type ChatMessage = { id: string; role: "user" | "assistant"; content: string };
+type LeaderboardResponse =
+  | { ok: true; data: DueDiligenceLeaderboard }
+  | { ok: false; error: { message: string } };
 
 const pillarIcons = {
   financials: ChartLineUp,
@@ -190,11 +199,31 @@ export function DueDiligenceView() {
   const [result, setResult] = useState<DueDiligenceResult | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [leaderboard, setLeaderboard] = useState<DueDiligenceLeaderboard | null>(null);
+  const [leaderboardError, setLeaderboardError] = useState<string | null>(null);
 
-  const submit = async (event: FormEvent) => {
-    event.preventDefault();
-    const normalized = ticker.trim().toUpperCase();
+  useEffect(() => {
+    const controller = new AbortController();
+    void fetch("/api/due-diligence/leaderboard", {
+      cache: "no-store",
+      signal: controller.signal,
+    })
+      .then(async (response) => {
+        const payload = await response.json() as LeaderboardResponse;
+        if (!payload.ok) throw new Error(payload.error.message);
+        setLeaderboard(payload.data);
+      })
+      .catch((reason) => {
+        if (reason instanceof DOMException && reason.name === "AbortError") return;
+        setLeaderboardError(reason instanceof Error ? reason.message : "The leaderboard could not be loaded.");
+      });
+    return () => controller.abort();
+  }, []);
+
+  const researchTicker = async (value: string) => {
+    const normalized = value.trim().toUpperCase();
     if (!normalized || busy) return;
+    setTicker(normalized);
     setBusy(true);
     setError(null);
     setResult(null);
@@ -209,6 +238,16 @@ export function DueDiligenceView() {
     } finally {
       setBusy(false);
     }
+  };
+
+  const submit = (event: FormEvent) => {
+    event.preventDefault();
+    void researchTicker(ticker);
+  };
+
+  const openCandidate = (entry: DueDiligenceLeaderboardEntry) => {
+    window.scrollTo({ top: 0, behavior: "smooth" });
+    void researchTicker(entry.ticker);
   };
 
   return (
@@ -243,6 +282,65 @@ export function DueDiligenceView() {
           </div>
         </div>
       </form>
+
+      <section className="panel overflow-hidden">
+        <div className="flex flex-wrap items-end justify-between gap-3 border-b p-5 md:p-6">
+          <div>
+            <div className="flex items-center gap-2 text-primary"><Crown weight="fill" /><p className="font-mono text-[9px] uppercase tracking-[0.18em]">Long-term discovery</p></div>
+            <h2 className="mt-2 text-xl font-semibold">Recommended research and top 25</h2>
+            <p className="mt-1 max-w-2xl text-xs leading-5 text-muted-foreground">Ranked with the same Financials, Outlook, Contracts, and Sector model used in each full report.</p>
+          </div>
+          {leaderboard && <p className="font-mono text-[9px] uppercase tracking-[0.12em] text-muted-foreground">Updated {new Date(leaderboard.generatedAt).toLocaleString()}</p>}
+        </div>
+        {!leaderboard && !leaderboardError ? (
+          <div className="grid gap-3 p-5 sm:grid-cols-2 xl:grid-cols-3">
+            {[0, 1, 2, 3, 4, 5].map((item) => <div key={item} className="h-32 animate-pulse rounded-2xl border bg-muted/30" />)}
+          </div>
+        ) : leaderboardError ? (
+          <p className="p-5 text-sm text-warning">{leaderboardError}</p>
+        ) : leaderboard && (
+          <>
+            <div className="grid gap-3 p-5 sm:grid-cols-2 xl:grid-cols-3">
+              {leaderboard.entries.slice(0, 6).map((entry) => (
+                <button
+                  key={entry.ticker}
+                  type="button"
+                  onClick={() => openCandidate(entry)}
+                  className="rounded-2xl border bg-background/40 p-4 text-left transition hover:-translate-y-0.5 hover:border-primary/40 hover:bg-accent/20"
+                >
+                  <div className="flex items-center gap-2">
+                    <span className="font-mono text-[10px] text-muted-foreground">#{entry.rank}</span>
+                    <strong className="font-mono text-lg">{entry.ticker}</strong>
+                    <ScoreBadge score={entry.overallScore} className="ml-auto" />
+                  </div>
+                  <p className="mt-2 truncate text-sm font-medium">{entry.company}</p>
+                  <p className="mt-1 text-[10px] text-muted-foreground">{entry.sector} · Best pillar: {entry.strongestPillar}</p>
+                </button>
+              ))}
+            </div>
+            <div className="overflow-x-auto border-t">
+              <table className="w-full min-w-[760px] text-left">
+                <thead className="bg-background/25 font-mono text-[9px] uppercase tracking-[0.12em] text-muted-foreground">
+                  <tr><th className="px-5 py-3">Rank</th><th className="px-3 py-3">Ticker</th><th className="px-3 py-3">Company</th><th className="px-3 py-3">Sector</th><th className="px-3 py-3">Strongest pillar</th><th className="px-5 py-3 text-right">Score</th></tr>
+                </thead>
+                <tbody className="divide-y">
+                  {leaderboard.entries.map((entry) => (
+                    <tr key={entry.ticker} className="cursor-pointer transition hover:bg-accent/25" onClick={() => openCandidate(entry)}>
+                      <td className="px-5 py-3 font-mono text-xs text-muted-foreground">{String(entry.rank).padStart(2, "0")}</td>
+                      <td className="px-3 py-3 font-mono text-sm font-semibold">{entry.ticker}</td>
+                      <td className="max-w-60 truncate px-3 py-3 text-xs">{entry.company}</td>
+                      <td className="px-3 py-3 text-xs text-muted-foreground">{entry.sector}</td>
+                      <td className="px-3 py-3 text-xs text-muted-foreground">{entry.strongestPillar}{entry.strongestPillarScore === null ? "" : ` ${entry.strongestPillarScore}`}</td>
+                      <td className="px-5 py-3 text-right"><ScoreBadge score={entry.overallScore} /></td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            {leaderboard.warnings.map((warning) => <p key={warning} className="border-t px-5 py-3 text-[10px] text-warning">{warning}</p>)}
+          </>
+        )}
+      </section>
 
       {busy && (
         <div className="grid gap-4 md:grid-cols-2">

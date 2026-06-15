@@ -7,9 +7,9 @@ export default function ScreenshotAnalyzerPage() {
   return (
     <>
       <PageHeader
-        eyebrow="TradingView screenshot workspace"
+        eyebrow="TradingView screenshot review"
         title="Screenshot analyzer"
-        description="Upload a chart, mark the structure with TradingView-style tools, and ask the local vision model to evaluate only what is visible."
+        description="Upload a TradingView chart and ask the local vision model to evaluate only the setup visible in the screenshot."
         variant="hero"
       />
       <ScreenshotAnalyzerView />

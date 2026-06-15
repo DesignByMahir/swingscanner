@@ -284,6 +284,26 @@ export interface DueDiligenceResult {
   warnings: string[];
 }
 
+export interface DueDiligenceLeaderboardEntry {
+  rank: number;
+  ticker: string;
+  company: string;
+  sector: string;
+  industry: string;
+  overallScore: number;
+  grade: "A+" | "A" | "B" | "Watch" | "Avoid";
+  verdict: string;
+  strongestPillar: string;
+  strongestPillarScore: number | null;
+}
+
+export interface DueDiligenceLeaderboard {
+  generatedAt: string;
+  universeSize: number;
+  entries: DueDiligenceLeaderboardEntry[];
+  warnings: string[];
+}
+
 export interface SectorPerformance {
   rank: number;
   ticker: string;
