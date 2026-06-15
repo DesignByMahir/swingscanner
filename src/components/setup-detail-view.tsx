@@ -17,9 +17,11 @@ import { compact, money, percent } from "@/lib/format";
 import type { SetupChartCandle, SetupDetail } from "@/lib/setup-detail";
 
 type Timeframe = "daily" | "weekly";
-type DrawingTool = "cursor" | "line" | "horizontal" | "ray" | "trendline";
+type DrawingTool = "cursor" | "path" | "horizontal" | "trendline" | "risk" | "long" | "short";
 type Point = { x: number; y: number };
-type Drawing = { id: string; tool: Exclude<DrawingTool, "cursor">; p1: Point; p2: Point };
+type Drawing =
+  | { id: string; tool: "path"; points: Point[] }
+  | { id: string; tool: Exclude<DrawingTool, "cursor" | "path">; p1: Point; p2: Point };
 
 function calculateEma(values: number[], period: number) {
   const result: Array<number | null> = [];
@@ -85,7 +87,8 @@ function SetupChart({ detail }: { detail: SetupDetail }) {
   const [timeframe, setTimeframe] = useState<Timeframe>("daily");
   const [tool, setTool] = useState<DrawingTool>("cursor");
   const [drawings, setDrawings] = useState<Drawing[]>([]);
-  const [pending, setPending] = useState<Point | null>(null);
+  const [active, setActive] = useState<Drawing | null>(null);
+  const [cursor, setCursor] = useState<Point | null>(null);
   const allCandles = useMemo(() => timeframe === "daily" ? detail.candles : weeklyCandles(detail.candles), [detail.candles, timeframe]);
   const candles = allCandles.slice(timeframe === "daily" ? -90 : -80);
   const storageKey = `swingscanner:drawings:${detail.setup.ticker}:${timeframe}`;
@@ -123,11 +126,18 @@ function SetupChart({ detail }: { detail: SetupDetail }) {
     const timer = window.setTimeout(() => {
       try {
         const saved = localStorage.getItem(storageKey);
-        setDrawings(saved ? JSON.parse(saved) as Drawing[] : []);
+        const parsed = saved ? JSON.parse(saved) as Array<Drawing | { id: string; tool: string; p1: Point; p2: Point }> : [];
+        setDrawings(parsed.flatMap((drawing) => {
+          if (drawing.tool === "line") return [{ ...drawing, tool: "trendline" as const }];
+          if (drawing.tool === "ray") return [{ ...drawing, tool: "horizontal" as const }];
+          if (["path", "horizontal", "trendline", "risk", "long", "short"].includes(drawing.tool)) return [drawing as Drawing];
+          return [];
+        }));
       } catch {
         setDrawings([]);
       }
-      setPending(null);
+      setActive(null);
+      setCursor(null);
     }, 0);
     return () => window.clearTimeout(timer);
   }, [storageKey]);
@@ -145,29 +155,77 @@ function SetupChart({ detail }: { detail: SetupDetail }) {
     };
   };
 
-  const draw = (event: React.PointerEvent<SVGSVGElement>) => {
+  const pointerDown = (event: React.PointerEvent<SVGSVGElement>) => {
     if (tool === "cursor") return;
     const point = pointFromEvent(event);
-    if (tool === "horizontal") {
-      saveDrawings([...drawings, { id: crypto.randomUUID(), tool, p1: { x: left, y: point.y }, p2: { x: plotRight, y: point.y } }]);
-      return;
-    }
-    if (tool === "ray") {
-      saveDrawings([...drawings, { id: crypto.randomUUID(), tool, p1: point, p2: { x: plotRight, y: point.y } }]);
-      return;
-    }
-    if (!pending) {
-      setPending(point);
-      return;
-    }
-    saveDrawings([...drawings, { id: crypto.randomUUID(), tool, p1: pending, p2: point }]);
-    setPending(null);
+    event.currentTarget.setPointerCapture(event.pointerId);
+    setActive(tool === "path"
+      ? { id: crypto.randomUUID(), tool, points: [point] }
+      : { id: crypto.randomUUID(), tool, p1: point, p2: point });
   };
 
-  const displayedLine = (drawing: Drawing) => {
-    if (drawing.tool !== "trendline" || drawing.p2.x === drawing.p1.x) return drawing;
-    const slope = (drawing.p2.y - drawing.p1.y) / (drawing.p2.x - drawing.p1.x);
-    return { ...drawing, p2: { x: plotRight, y: drawing.p1.y + slope * (plotRight - drawing.p1.x) } };
+  const pointerMove = (event: React.PointerEvent<SVGSVGElement>) => {
+    const point = pointFromEvent(event);
+    setCursor(point);
+    if (!active) return;
+    if (active.tool === "path") {
+      const previous = active.points.at(-1)!;
+      if (Math.hypot(point.x - previous.x, point.y - previous.y) >= 2.5) {
+        setActive({ ...active, points: [...active.points, point] });
+      }
+    } else {
+      setActive({ ...active, p2: point });
+    }
+  };
+
+  const pointerUp = (event: React.PointerEvent<SVGSVGElement>) => {
+    if (!active) return;
+    event.currentTarget.releasePointerCapture(event.pointerId);
+    const valid = active.tool === "path"
+      ? active.points.length > 1
+      : active.tool === "horizontal" || Math.hypot(active.p2.x - active.p1.x, active.p2.y - active.p1.y) > 3;
+    if (valid) saveDrawings([...drawings, active]);
+    setActive(null);
+  };
+
+  const renderDrawing = (drawing: Drawing, preview = false) => {
+    const stroke = preview ? "var(--primary)" : "var(--chart-drawing)";
+    if (drawing.tool === "path") {
+      return <polyline points={drawing.points.map((point) => `${point.x},${point.y}`).join(" ")} fill="none" stroke={stroke} strokeWidth="2.3" strokeLinecap="round" strokeLinejoin="round" opacity={preview ? 0.75 : 1} />;
+    }
+    if (drawing.tool === "horizontal") {
+      return <line x1={left} y1={drawing.p2.y} x2={plotRight} y2={drawing.p2.y} stroke={stroke} strokeWidth="2" />;
+    }
+    if (drawing.tool === "trendline") {
+      return <line x1={drawing.p1.x} y1={drawing.p1.y} x2={drawing.p2.x} y2={drawing.p2.y} stroke={stroke} strokeWidth="2.3" />;
+    }
+    const entry = drawing.p1.y;
+    const drag = drawing.p2.y;
+    const target = drawing.tool === "long"
+      ? entry - Math.abs(drag - entry)
+      : drawing.tool === "short"
+        ? entry + Math.abs(drag - entry)
+        : Math.min(entry, drag);
+    const stop = drawing.tool === "long"
+      ? entry + Math.abs(drag - entry)
+      : drawing.tool === "short"
+        ? entry - Math.abs(drag - entry)
+        : Math.max(entry, drag);
+    const x1 = Math.min(drawing.p1.x, drawing.p2.x);
+    const x2 = Math.max(drawing.p1.x, drawing.p2.x);
+    const profitTop = Math.min(entry, target);
+    const lossTop = Math.min(entry, stop);
+    return (
+      <g opacity={preview ? 0.72 : 0.94}>
+        <rect x={x1} y={profitTop} width={Math.max(7, x2 - x1)} height={Math.max(1, Math.abs(entry - target))} fill="var(--positive)" opacity="0.2" />
+        <rect x={x1} y={lossTop} width={Math.max(7, x2 - x1)} height={Math.max(1, Math.abs(stop - entry))} fill="var(--negative)" opacity="0.23" />
+        <line x1={x1} y1={entry} x2={x2} y2={entry} stroke={stroke} strokeWidth="2" strokeDasharray="5 4" />
+        <line x1={x1} y1={target} x2={x2} y2={target} stroke="var(--positive)" strokeWidth="2" />
+        <line x1={x1} y1={stop} x2={x2} y2={stop} stroke="var(--negative)" strokeWidth="2" />
+        <text x={x2 + 5} y={target + 4} fill="var(--positive)" fontSize="10" fontFamily="monospace">TP</text>
+        <text x={x2 + 5} y={stop + 4} fill="var(--negative)" fontSize="10" fontFamily="monospace">SL</text>
+      </g>
+    );
   };
 
   const startIndex = closestIndex(candles, detail.setup.plan.trendlineStartDate);
@@ -191,19 +249,30 @@ function SetupChart({ detail }: { detail: SetupDetail }) {
       <div className="flex flex-wrap items-center gap-2 border-b bg-background/40 p-3">
         {([
           ["cursor", "Cursor"],
-          ["line", "Line"],
+          ["path", "Path"],
           ["horizontal", "Horizontal line"],
-          ["ray", "Horizontal ray"],
-          ["trendline", "Trendline"],
+          ["trendline", "Trend line"],
+          ["risk", "Take profit / stop"],
+          ["long", "Long position"],
+          ["short", "Short position"],
         ] as Array<[DrawingTool, string]>).map(([value, label]) => (
-          <Button key={value} size="sm" variant={tool === value ? "default" : "outline"} onClick={() => { setTool(value); setPending(null); }}>{label}</Button>
+          <Button key={value} size="sm" variant={tool === value ? "default" : "outline"} onClick={() => { setTool(value); setActive(null); }}>{label}</Button>
         ))}
-        <span className="ml-auto text-[10px] text-muted-foreground">{pending ? "Click the second point" : `${drawings.length} saved drawing${drawings.length === 1 ? "" : "s"}`}</span>
+        <span className="ml-auto text-[10px] text-muted-foreground">{active ? "Drag to preview, then release" : `${drawings.length} saved drawing${drawings.length === 1 ? "" : "s"}`}</span>
         <Button size="sm" variant="ghost" disabled={!drawings.length} onClick={() => saveDrawings(drawings.slice(0, -1))}>Undo</Button>
         <Button size="sm" variant="ghost" disabled={!drawings.length} onClick={() => saveDrawings([])}>Clear</Button>
       </div>
       <div className="overflow-x-auto p-3">
-        <svg viewBox={`0 0 ${width} ${height}`} className={`min-w-[760px] w-full ${tool === "cursor" ? "" : "cursor-crosshair"}`} role="img" aria-label={`${detail.setup.ticker} ${timeframe} candlestick chart`} onPointerDown={draw}>
+        <svg
+          viewBox={`0 0 ${width} ${height}`}
+          className={`min-w-[760px] w-full touch-none select-none ${tool === "cursor" ? "" : "cursor-crosshair"}`}
+          role="img"
+          aria-label={`${detail.setup.ticker} ${timeframe} candlestick chart`}
+          onPointerDown={pointerDown}
+          onPointerMove={pointerMove}
+          onPointerUp={pointerUp}
+          onPointerLeave={() => { setCursor(null); if (active) setActive(null); }}
+        >
           <rect width={width} height={height} fill="var(--chart-bg)" rx="10" />
           {gridPrices.map((price) => <g key={price}><line x1={left} x2={plotRight} y1={y(price)} y2={y(price)} stroke="var(--chart-grid)" strokeDasharray="3 5" /><text x={plotRight + 8} y={y(price) + 4} fill="var(--chart-label)" fontSize="11" fontFamily="monospace">{price.toFixed(2)}</text></g>)}
           {levels.map((level) => <g key={level.label}><line x1={left} x2={plotRight} y1={y(level.value)} y2={y(level.value)} stroke={level.color} strokeDasharray="6 5" opacity="0.72" /><text x={left + 6} y={y(level.value) - 5} fill={level.color} fontSize="10" fontFamily="monospace">{level.label} {level.value.toFixed(2)}</text></g>)}
@@ -221,15 +290,24 @@ function SetupChart({ detail }: { detail: SetupDetail }) {
           <path d={pathFor("ema8")} fill="none" stroke="var(--chart-ema-fast)" strokeWidth="1.8" />
           <path d={pathFor("ema21")} fill="none" stroke="var(--chart-ema-mid)" strokeWidth="1.6" />
           <path d={pathFor("ema50")} fill="none" stroke="var(--chart-ema-slow)" strokeWidth="1.5" />
-          {drawings.map((item) => {
-            const line = displayedLine(item);
-            return <line key={item.id} x1={line.p1.x} y1={line.p1.y} x2={line.p2.x} y2={line.p2.y} stroke="var(--chart-drawing)" strokeWidth="2" />;
-          })}
-          {pending && <circle cx={pending.x} cy={pending.y} r="4" fill="var(--chart-drawing)" />}
+          {drawings.map((item) => <g key={item.id}>{renderDrawing(item)}</g>)}
+          {active && renderDrawing(active, true)}
+          {cursor && tool !== "cursor" && (
+            <g pointerEvents="none" opacity="0.72">
+              <line x1={left} y1={cursor.y} x2={plotRight} y2={cursor.y} stroke="var(--chart-drawing)" strokeWidth="1" strokeDasharray="3 5" />
+              <line x1={cursor.x} y1={top} x2={cursor.x} y2={priceBottom} stroke="var(--chart-drawing)" strokeWidth="1" strokeDasharray="3 5" />
+              <line x1={cursor.x - 8} y1={cursor.y} x2={cursor.x + 8} y2={cursor.y} stroke="var(--chart-drawing)" strokeWidth="2" />
+              <line x1={cursor.x} y1={cursor.y - 8} x2={cursor.x} y2={cursor.y + 8} stroke="var(--chart-drawing)" strokeWidth="2" />
+              <rect x={plotRight + 3} y={cursor.y - 10} width={69} height={19} rx={4} fill="var(--chart-drawing)" />
+              <text x={plotRight + 37} y={cursor.y + 4} textAnchor="middle" fill="var(--chart-bg)" fontSize="10" fontFamily="monospace">
+                {(maxPrice - ((cursor.y - top) / (priceBottom - top)) * (maxPrice - minPrice)).toFixed(2)}
+              </text>
+            </g>
+          )}
           {[0, Math.floor(candles.length / 2), candles.length - 1].map((index) => <text key={index} x={x(index)} y={492} textAnchor="middle" fill="var(--chart-label)" fontSize="10" fontFamily="monospace">{candles[index].date.slice(5)}</text>)}
         </svg>
       </div>
-      <div className="chart-legend flex flex-wrap gap-3 border-t p-3 font-mono text-[10px]"><span className="chart-fast">8 EMA</span><span className="chart-mid">21 EMA</span><span className="chart-slow">50 EMA</span><span className="chart-trendline">Scanner resistance</span><span className="text-muted-foreground">Manual drawings save locally</span></div>
+      <div className="chart-legend flex flex-wrap gap-3 border-t p-3 font-mono text-[10px]"><span className="chart-fast">8 EMA</span><span className="chart-mid">21 EMA</span><span className="chart-slow">50 EMA</span><span className="chart-trendline">Scanner resistance</span><span className="text-muted-foreground">Press, drag, and release. Manual drawings save locally.</span></div>
     </div>
   );
 }

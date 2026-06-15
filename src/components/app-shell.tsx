@@ -11,10 +11,11 @@ import {
   ChartLineUp,
   GearSix,
   HardDrives,
+  ImageSquare,
   MagnifyingGlass,
+  NewspaperClipping,
   UserCircle,
   SidebarSimple,
-  Star,
   TrendUp,
 } from "@phosphor-icons/react";
 import { useEffect, useState } from "react";
@@ -44,7 +45,8 @@ const navItems = [
   { href: "/scanner", label: "Live Scanner", icon: Binoculars },
   { href: "/ticker-research", label: "Ticker Research", icon: MagnifyingGlass },
   { href: "/due-diligence", label: "Due Diligence", icon: Briefcase },
-  { href: "/watchlist", label: "Morning Watchlist", icon: Star },
+  { href: "/screenshot-analyzer", label: "Screenshot Analyzer", icon: ImageSquare },
+  { href: "/sean-trades", label: "SeanTrades", icon: NewspaperClipping },
   { href: "/sectors", label: "Sector Pulse", icon: ChartLineUp },
   { href: "/setup-coach", label: "Setup Coach", icon: Brain },
   { href: "/journal", label: "Trading Journal", icon: BookOpenText },

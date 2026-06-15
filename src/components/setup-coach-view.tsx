@@ -110,7 +110,7 @@ export function SetupCoachView() {
           </div>
         )}
       </aside>
-      <div className="panel flex min-h-[680px] flex-col overflow-hidden">
+      <div className="panel flex h-[min(760px,82dvh)] min-h-[560px] flex-col overflow-hidden">
         <div className="border-b p-5">
           <div className="flex items-center gap-2"><Brain className="text-primary" weight="fill" /><p className="font-medium">{ticker ? `Ask about ${ticker}` : "Loading setups..."}</p></div>
           <p className="mt-2 text-xs leading-5 text-muted-foreground">Gemma answers locally from the selected setup&apos;s completed scan, chart history, and written trade plan.</p>

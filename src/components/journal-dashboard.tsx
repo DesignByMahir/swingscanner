@@ -240,7 +240,7 @@ function Coach({ trades }: { trades: JournalTrade[] }) {
   };
 
   return (
-    <div className="panel flex min-h-[620px] flex-col overflow-hidden">
+    <div className="panel flex h-[min(720px,78dvh)] min-h-[520px] flex-col overflow-hidden">
       <div className="border-b p-5">
         <div className="flex items-center gap-2"><Brain className="text-primary" size={20} weight="fill" /><p className="font-medium">Local reflection coach</p><span className={cn("ml-auto rounded-full border px-2 py-0.5 font-mono text-[9px]", ready ? "border-positive/30 text-positive" : "border-warning/30 text-warning")}>{ready === null ? "CHECKING" : ready ? "GEMMA READY" : "OFFLINE"}</span></div>
         <p className="mt-2 text-xs leading-5 text-muted-foreground">Gemma runs from the D: drive through local Ollama. Journal content stays on this machine.</p>

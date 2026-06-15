@@ -199,7 +199,7 @@ export function analyzeSymbol(
     distance8: Number(distance8.toFixed(2)),
     distance21: Number(distance21.toFixed(2)),
     distance50: Number(distance50.toFixed(2)),
-    rs: Math.round(evidence.marketLeadershipScore / 25 * 100),
+    rs: Math.round(evidence.marketLeadershipScore / 20 * 100),
     setupLabel: evidence.setupLabel,
     relative5Spy: Number(evidence.relative5Spy.toFixed(2)),
     relative5Qqq: Number(evidence.relative5Qqq.toFixed(2)),
@@ -226,8 +226,9 @@ export function analyzeSymbol(
     earningsDays: 999,
     tighteningPercent: plan.tighteningPercent,
     scoreParts: [
-      { label: "Market leadership / RS", value: evidence.marketLeadershipScore / 25 * 100, weight: 25 },
-      { label: "Theme / sector strength", value: evidence.themeScore / 20 * 100, weight: 20 },
+      { label: "Market leadership / RS", value: evidence.marketLeadershipScore / 20 * 100, weight: 20 },
+      { label: "Economic / category leadership", value: evidence.economicLeadershipScore / 15 * 100, weight: 15 },
+      { label: "Theme / sector strength", value: evidence.themeScore / 15 * 100, weight: 15 },
       { label: "Weekly trend / 8W EMA", value: evidence.weeklyTrendScore / 25 * 100, weight: 25 },
       { label: "Daily setup quality", value: evidence.dailySetupScore / 20 * 100, weight: 20 },
       { label: "Volume / tradability", value: evidence.tradabilityScore / 10 * 100, weight: 10 },
@@ -309,7 +310,7 @@ function leaderComparator(left: StockSetup, right: StockSetup) {
       left.relative63Spy > 0 ||
       left.relative63Qqq > 0
     ) &&
-    left.themeScore >= 11,
+      left.themeScore >= 9,
   );
   const rightEligible = Number(
     (
@@ -320,7 +321,7 @@ function leaderComparator(left: StockSetup, right: StockSetup) {
       right.relative63Spy > 0 ||
       right.relative63Qqq > 0
     ) &&
-    right.themeScore >= 11,
+      right.themeScore >= 9,
   );
   const leftActionability = leftEligible + Number(left.status === "Actionable" && left.setup !== "Extended / Wait");
   const rightActionability = rightEligible + Number(right.status === "Actionable" && right.setup !== "Extended / Wait");
@@ -536,7 +537,7 @@ export async function runFreeDailyScan(options: FreeScanOptions = {}): Promise<F
       stock.relative20Qqq > 0 ||
       stock.relative63Spy > 0 ||
       stock.relative63Qqq > 0;
-    return !outperforming || stock.themeScore < 11;
+    return !outperforming || stock.themeScore < 9;
   })) {
     throw new Error("Leadership ranking invariant failed: top five contains a non-leading stock or weak theme.");
   }
@@ -575,7 +576,8 @@ export async function runFreeDailyScan(options: FreeScanOptions = {}): Promise<F
       failedSymbols: failures.length,
       warnings: [
         ...router.warnings,
-        "Ranked by market leadership, theme strength, weekly 8-week EMA structure, daily setup quality, and tradability.",
+        "Ranked by relative strength, economic and category leadership, durable theme strength, weekly 8-week EMA structure, daily setup quality, and tradability.",
+        "Peripheral ad-tech and low-conviction intermediary businesses are suppressed even when their charts temporarily outperform.",
         "Options quality contributes to tradability but does not blanket-exclude otherwise strong leaders.",
         "The final list preserves the strongest market leaders while reserving qualified setups across all represented sectors.",
       ],

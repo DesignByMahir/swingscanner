@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { DailyCandle } from "../src/types/domain";
 import {
+  assessEconomicLeadership,
   classifyMarketTheme,
   scoreLeaderEvidence,
   type BenchmarkReturns,
@@ -67,6 +68,38 @@ describe("leader-first scoring", () => {
     expect(classifyMarketTheme("IONQ", "IonQ", "Quantum computing systems")).toBe("Quantum Computing");
   });
 
+  it("prioritizes strategic infrastructure and economy-leading companies", () => {
+    expect(assessEconomicLeadership("MRVL", "Marvell Technology", "Semiconductors")).toMatchObject({
+      strategic: true,
+      peripheral: false,
+    });
+    expect(assessEconomicLeadership("RGTI", "Rigetti Computing", "Quantum computing systems")).toMatchObject({
+      strategic: true,
+      peripheral: false,
+    });
+    expect(assessEconomicLeadership("MRVL", "Marvell Technology", "Semiconductors").score).toBeGreaterThanOrEqual(12);
+    expect(assessEconomicLeadership("RGTI", "Rigetti Computing", "Quantum computing systems").score).toBeGreaterThanOrEqual(12);
+  });
+
+  it("suppresses peripheral ad-tech businesses such as TBLA", () => {
+    const leadership = assessEconomicLeadership(
+      "TBLA",
+      "Taboola.com Ltd.",
+      "Advertising technology and content recommendation",
+    );
+    expect(leadership.peripheral).toBe(true);
+    expect(leadership.score).toBe(0);
+    expect(scoreLeaderEvidence({
+      ticker: "TBLA",
+      company: "Taboola.com Ltd.",
+      industry: "Advertising technology and content recommendation",
+      candles: history(),
+      benchmarks: neutralBenchmarks,
+      sector: leadingSector,
+      peerStrengthCount: 4,
+    })).toBeNull();
+  });
+
   it("keeps extended leaders visible but penalizes their daily entry quality", () => {
     const actionable = scoreLeaderEvidence({
       ticker: "ALAB",
@@ -106,7 +139,8 @@ describe("leader-first scoring", () => {
     expect(evidence!.outperformingMarket).toBe(true);
     expect(evidence!.strongTheme).toBe(true);
     expect(evidence!.scoreCap).toBe(100);
-    expect(evidence!.marketLeadershipScore).toBeGreaterThan(18);
+    expect(evidence!.marketLeadershipScore).toBeGreaterThan(15);
+    expect(evidence!.economicLeadershipScore).toBeGreaterThanOrEqual(12);
   });
 
   it("caps a chart that underperforms both SPY and QQQ at 65", () => {

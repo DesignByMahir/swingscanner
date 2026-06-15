@@ -114,7 +114,7 @@ function DueDiligenceCoach({ result }: { result: DueDiligenceResult }) {
   };
 
   return (
-    <section className="panel flex min-h-[620px] flex-col overflow-hidden">
+    <section className="panel flex h-[min(720px,78dvh)] min-h-[520px] flex-col overflow-hidden">
       <div className="border-b p-5">
         <div className="flex items-center gap-2">
           <Brain className="text-primary" size={20} weight="fill" />

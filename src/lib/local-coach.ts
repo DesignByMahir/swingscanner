@@ -28,6 +28,23 @@ export async function resolveLocalCoachModel() {
   ) ?? installed[0];
 }
 
+export async function resolveLocalVisionModel() {
+  const response = await fetch(`${baseUrl}/api/tags`, {
+    cache: "no-store",
+    signal: AbortSignal.timeout(3_500),
+  });
+  if (!response.ok) throw new Error("Local Ollama is not available.");
+  const payload = await response.json() as OllamaTags;
+  const installed = payload.models?.map((item) => item.name).filter(Boolean) ?? [];
+  const vision = installed.find((name) =>
+    /gemma3|llava|qwen.*vl|minicpm-v|moondream/i.test(name),
+  );
+  if (!vision) {
+    throw new Error("Install a vision model in Ollama first. SwingScanner recommends: ollama pull gemma3:4b");
+  }
+  return vision;
+}
+
 export async function createLocalCoachStream(
   system: string,
   messages: Array<{ role: "user" | "assistant"; content: string }>,
@@ -98,3 +115,63 @@ export async function createLocalCoachStream(
   return { model, stream };
 }
 
+export async function createLocalVisionCoachStream(
+  system: string,
+  prompt: string,
+  imageBase64: string,
+  signal: AbortSignal,
+) {
+  const model = await resolveLocalVisionModel();
+  const response = await fetch(`${baseUrl}/api/chat`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      model,
+      stream: true,
+      keep_alive: "10m",
+      options: { temperature: 0.2, num_predict: 900 },
+      messages: [
+        { role: "system", content: system },
+        { role: "user", content: prompt, images: [imageBase64] },
+      ],
+    }),
+    signal,
+  });
+  if (!response.ok || !response.body) {
+    const payload = await response.text().catch(() => "");
+    throw new Error(payload || `Local vision model request failed (${response.status}).`);
+  }
+
+  const decoder = new TextDecoder();
+  const encoder = new TextEncoder();
+  let buffer = "";
+  const stream = new ReadableStream<Uint8Array>({
+    async start(controller) {
+      const reader = response.body!.getReader();
+      try {
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          buffer += decoder.decode(value, { stream: true });
+          const lines = buffer.split("\n");
+          buffer = lines.pop() ?? "";
+          for (const line of lines) {
+            if (!line.trim()) continue;
+            const chunk = JSON.parse(line) as {
+              message?: { content?: string };
+              error?: string;
+            };
+            if (chunk.error) throw new Error(chunk.error);
+            if (chunk.message?.content) controller.enqueue(encoder.encode(chunk.message.content));
+          }
+        }
+        controller.close();
+      } catch (error) {
+        controller.error(error);
+      } finally {
+        reader.releaseLock();
+      }
+    },
+  });
+  return { model, stream };
+}

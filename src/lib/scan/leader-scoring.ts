@@ -36,6 +36,8 @@ export interface LeaderEvidence {
   setupLabel: SetupLabel;
   canonicalTheme: string;
   marketLeadershipScore: number;
+  economicLeadershipScore: number;
+  economicLeadershipLabel: string;
   themeScore: number;
   weeklyTrendScore: number;
   dailySetupScore: number;
@@ -69,6 +71,80 @@ export interface LeaderEvidence {
   bounceVolumeRatio: number;
   heavySellingBelowWeek8: boolean;
   reasons: string[];
+}
+
+export interface EconomicLeadership {
+  score: number;
+  label: string;
+  strategic: boolean;
+  peripheral: boolean;
+  reasons: string[];
+}
+
+const CATEGORY_LEADERS = new Set([
+  "AAPL", "ABBV", "ALAB", "AMD", "AMAT", "AMZN", "ANET", "ASML", "AVGO", "BA",
+  "BAC", "CAT", "CCJ", "CEG", "COP", "COST", "CRDO", "CRM", "CRWD", "CVX", "DELL", "ETN",
+  "GE", "GILD", "GOOGL", "GS", "HD", "HOOD", "IONQ", "JPM", "KLAC", "KTOS",
+  "LLY", "LMT", "LOW", "LRCX", "META", "MRVL", "MSFT", "MU", "NET", "NOC",
+  "NOW", "NVDA", "ORCL", "PANW", "PLTR", "QCOM", "QBTS", "REGN", "RGTI",
+  "RTX", "SLB", "SMCI", "SNOW", "TSM", "UBER", "UNH", "VRTX", "VRT", "VST",
+  "WMT", "XOM",
+]);
+
+const PERIPHERAL_TICKERS = new Set(["TBLA"]);
+
+export function assessEconomicLeadership(
+  ticker: string,
+  company: string,
+  industry: string,
+  canonicalTheme = classifyMarketTheme(ticker, company, industry),
+): EconomicLeadership {
+  const normalizedTicker = ticker.toUpperCase();
+  const value = `${normalizedTicker} ${company} ${industry} ${canonicalTheme}`.toLowerCase();
+  const categoryLeader = CATEGORY_LEADERS.has(normalizedTicker);
+  const strategicInfrastructure =
+    /semiconductor|chip|wafer|silicon|data center|server|networking|optical|fiber|power grid|electrification|cooling|nuclear|uranium|quantum|robot|automation|aerospace|defense|cyber|cloud infrastructure|foundry|industrial machinery|energy infrastructure/.test(value);
+  const economyAnchor =
+    /banking|payments|insurance|logistics|railroad|construction|healthcare|pharma|medical|energy|oil|gas|utility|consumer staples|grocery|retail infrastructure/.test(value);
+  const durableInnovation =
+    /artificial intelligence|machine learning|autonomous|genomic|biotechnology|electric vehicle|space technology/.test(value);
+  const peripheral =
+    PERIPHERAL_TICKERS.has(normalizedTicker) ||
+    /adtech|advertising technology|content recommendation|traffic acquisition|click monetization|digital advertising intermediary/.test(value);
+
+  const score = clamp(
+    Number(categoryLeader) * 7 +
+      Number(strategicInfrastructure) * 6 +
+      Number(economyAnchor) * 4 +
+      Number(durableInnovation) * 4 -
+      Number(peripheral) * 12,
+    0,
+    15,
+  );
+  const strategic = categoryLeader || strategicInfrastructure || economyAnchor || durableInnovation;
+  const label = peripheral
+    ? "Peripheral / low-conviction business"
+    : score >= 12
+      ? "Global infrastructure leader"
+      : score >= 8
+        ? "Strategic theme leader"
+        : score >= 4
+          ? "Economy-linked operator"
+          : "Performance-led only";
+
+  return {
+    score,
+    label,
+    strategic,
+    peripheral,
+    reasons: [
+      ...(categoryLeader ? ["Recognized category leader with broad market relevance"] : []),
+      ...(strategicInfrastructure ? ["Supports strategic technology, industrial, energy, or digital infrastructure"] : []),
+      ...(economyAnchor ? ["Operates in a core economic sector or essential service"] : []),
+      ...(durableInnovation ? ["Participates in a durable global innovation cycle"] : []),
+      ...(peripheral ? ["Business model is peripheral to the strategic themes this scanner is designed to prioritize"] : []),
+    ],
+  };
 }
 
 export function weeklyCandles(candles: DailyCandle[]) {
@@ -195,12 +271,19 @@ export function scoreLeaderEvidence({
       Number(near20High) * 1.5 +
       Number(near50High) * 1.25 +
       Number(near52WeekHigh) * 1.25 +
-      Number(priorUptrend) * 4,
+      Number(priorUptrend) * 3,
     0,
-    25,
+    20,
   );
 
   const canonicalTheme = classifyMarketTheme(ticker, company, industry);
+  const economicLeadership = assessEconomicLeadership(
+    ticker,
+    company,
+    industry,
+    canonicalTheme,
+  );
+  if (economicLeadership.peripheral) return null;
   const priorityTheme = [
     "Artificial Intelligence",
     "Semiconductors",
@@ -222,9 +305,12 @@ export function scoreLeaderEvidence({
       Number(priorityTheme) * 2 +
       Math.min(peerStrengthCount, 4),
     0,
-    20,
+    15,
   );
-  const strongTheme = themeScore >= 11 || (sectorLeading && priorityTheme);
+  const strongTheme =
+    themeScore >= 9 ||
+    (sectorLeading && priorityTheme) ||
+    economicLeadership.score >= 8;
 
   const week8Rising = weekEma8 > priorWeekEma8;
   const week21Rising = weekEma21 > priorWeekEma21;
@@ -337,6 +423,8 @@ export function scoreLeaderEvidence({
   };
   if (!outperformingMarket) applyCap(65, "Underperforming both SPY and QQQ");
   if (!strongTheme) applyCap(70, "Weak or non-leading theme");
+  if (!economicLeadership.strategic) applyCap(68, "Performance-led stock without durable economic or thematic leadership");
+  if (economicLeadership.score < 4) applyCap(62, "Low economic leadership relevance");
   if (!aboveWeek21) applyCap(60, "Price below the 21-week EMA");
   if (!week8Rising) applyCap(60, "8-week EMA is declining");
   if (heavySellingBelowWeek8) applyCap(55, "Closed below the 8-week EMA on heavy selling");
@@ -347,6 +435,7 @@ export function scoreLeaderEvidence({
   const finalScore = Math.min(
     scoreCap,
     marketLeadershipScore +
+      economicLeadership.score +
       themeScore +
       weeklyTrendScore +
       dailySetupScore +
@@ -366,6 +455,8 @@ export function scoreLeaderEvidence({
     setupLabel,
     canonicalTheme,
     marketLeadershipScore,
+    economicLeadershipScore: economicLeadership.score,
+    economicLeadershipLabel: economicLeadership.label,
     themeScore,
     weeklyTrendScore,
     dailySetupScore,
@@ -400,7 +491,8 @@ export function scoreLeaderEvidence({
     heavySellingBelowWeek8,
     reasons: [
       `Relative performance vs SPY/QQQ: ${relative5Spy.toFixed(1)}%/${relative5Qqq.toFixed(1)}% over 5D, ${relative20Spy.toFixed(1)}%/${relative20Qqq.toFixed(1)}% over 20D, and ${relative63Spy.toFixed(1)}%/${relative63Qqq.toFixed(1)}% over 3M`,
-      `${canonicalTheme} theme score is ${themeScore.toFixed(1)}/20 with ${peerStrengthCount} strong peer${peerStrengthCount === 1 ? "" : "s"}`,
+      `${economicLeadership.label}: ${economicLeadership.score.toFixed(1)}/15 economic leadership points${economicLeadership.reasons.length ? ` (${economicLeadership.reasons.join("; ")})` : ""}`,
+      `${canonicalTheme} theme score is ${themeScore.toFixed(1)}/15 with ${peerStrengthCount} strong peer${peerStrengthCount === 1 ? "" : "s"}`,
       `Weekly structure scores ${weeklyTrendScore.toFixed(1)}/25; price is ${distanceWeek8.toFixed(1)}% from the ${week8Rising ? "rising" : "declining"} 8-week EMA`,
       `${setupLabel}; daily setup quality is ${dailySetupScore.toFixed(1)}/20`,
       `Dollar volume is $${(dollarVolume / 1_000_000).toFixed(1)}M with ${relativeVolume.toFixed(2)}x relative volume`,
