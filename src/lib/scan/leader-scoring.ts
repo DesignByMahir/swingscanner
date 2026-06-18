@@ -66,6 +66,8 @@ export interface LeaderEvidence {
   support: number;
   baseLow: number;
   baseDays: number;
+  trendlineStartPrice: number;
+  trendlineEndPrice: number;
   tighteningPercent: number;
   pullbackVolumeRatio: number;
   bounceVolumeRatio: number;
@@ -83,6 +85,8 @@ export interface EconomicLeadership {
 
 export interface TightBaseEvidence {
   qualified: boolean;
+  pattern: "Tight Base" | "Bull Flag" | "Wedge Pop";
+  quality: number;
   days: number;
   breakoutLevel: number;
   baseLow: number;
@@ -93,16 +97,18 @@ export interface TightBaseEvidence {
   higherHighCount: number;
   lowerLowCount: number;
   nearEmaStack: boolean;
+  trendlineStartPrice?: number;
+  trendlineEndPrice?: number;
 }
 
 const CATEGORY_LEADERS = new Set([
-  "AAPL", "ABBV", "ALAB", "AMD", "AMAT", "AMZN", "ANET", "ASML", "AVGO", "BA",
-  "BAC", "CAT", "CCJ", "CEG", "COP", "COST", "CRDO", "CRM", "CRWD", "CVX", "DELL", "ETN",
-  "GE", "GILD", "GOOGL", "GS", "HD", "HOOD", "IONQ", "JPM", "KLAC", "KTOS",
+  "AAPL", "ABBV", "ALAB", "AMD", "AMAT", "AMZN", "ANET", "ARM", "ASML", "AVGO", "BA",
+  "BAC", "CAT", "CCJ", "CEG", "COP", "COST", "CRDO", "CRM", "CRWD", "CRWV", "CVX", "DELL", "ETN",
+  "FPS", "GE", "GILD", "GOOGL", "GS", "HD", "HOOD", "INTC", "IONQ", "JPM", "KLAC", "KTOS",
   "LLY", "LMT", "LOW", "LRCX", "META", "MRVL", "MSFT", "MU", "NET", "NOC",
-  "NOW", "NVDA", "ORCL", "PANW", "PLTR", "QCOM", "QBTS", "REGN", "RGTI",
-  "RTX", "SLB", "SMCI", "SNOW", "TSM", "UBER", "UNH", "VRTX", "VRT", "VST",
-  "WMT", "XOM",
+  "NOW", "NVDA", "ORCL", "PANW", "PLTR", "QCOM", "QBTS", "REGN", "RGTI", "RKLB",
+  "RTX", "SLB", "SMCI", "SNOW", "TE", "TSM", "UBER", "UNH", "VRTX", "VRT", "VST",
+  "WMT", "WOLF", "XOM",
 ]);
 
 const PERIPHERAL_TICKERS = new Set(["TBLA"]);
@@ -117,11 +123,11 @@ export function assessEconomicLeadership(
   const value = `${normalizedTicker} ${company} ${industry} ${canonicalTheme}`.toLowerCase();
   const categoryLeader = CATEGORY_LEADERS.has(normalizedTicker);
   const strategicInfrastructure =
-    /semiconductor|chip|wafer|silicon|data center|server|networking|optical|fiber|power grid|electrification|cooling|nuclear|uranium|quantum|robot|automation|aerospace|defense|cyber|cloud infrastructure|foundry|industrial machinery|energy infrastructure/.test(value);
+    /semiconductor|chip|wafer|silicon|silicon carbide|data center|server|networking|optical|fiber|power grid|electrification|power infrastructure|cooling|nuclear|uranium|quantum|robot|automation|aerospace|defense|space launch|rocket|satellite|cyber|ai cloud|cloud infrastructure|foundry|industrial machinery|energy infrastructure/.test(value);
   const economyAnchor =
     /banking|payments|insurance|logistics|railroad|construction|healthcare|pharma|medical|energy|oil|gas|utility|consumer staples|grocery|retail infrastructure/.test(value);
   const durableInnovation =
-    /artificial intelligence|machine learning|autonomous|genomic|biotechnology|electric vehicle|space technology/.test(value);
+    /artificial intelligence|machine learning|autonomous|genomic|biotechnology|electric vehicle|space technology|launch systems|accelerated compute/.test(value);
   const peripheral =
     PERIPHERAL_TICKERS.has(normalizedTicker) ||
     /adtech|advertising technology|content recommendation|traffic acquisition|click monetization|digital advertising intermediary/.test(value);
@@ -183,15 +189,19 @@ export function weeklyCandles(candles: DailyCandle[]) {
 export function classifyMarketTheme(ticker: string, company: string, industry: string) {
   const value = `${ticker} ${company} ${industry}`.toLowerCase();
   const normalizedTicker = ticker.toUpperCase();
-  if (["AMD", "AMAT", "AMKR", "ASML", "AVGO", "CRDO", "KLAC", "LRCX", "MRVL", "MU", "NVDA", "QCOM", "TSM", "VECO"].includes(normalizedTicker)) return "Semiconductors";
-  if (/semiconductor|chip|microelectronic|optoelectronic|wafer|silicon|photonic/.test(value)) return "Semiconductors";
-  if (/data center|server|networking|optical|fiber|power solution|cooling/.test(value)) return "Data Centers";
+  if (["AMD", "AMAT", "AMKR", "ARM", "ASML", "AVGO", "CRDO", "INTC", "KLAC", "LRCX", "MRVL", "MU", "NVDA", "QCOM", "TSM", "VECO", "WOLF"].includes(normalizedTicker)) return "Semiconductors";
+  if (["CRWV"].includes(normalizedTicker)) return "Data Centers";
+  if (["RKLB"].includes(normalizedTicker)) return "Defense & Space";
+  if (["FPS", "TE"].includes(normalizedTicker)) return "Energy Infrastructure";
+  if (/semiconductor|chip|microelectronic|optoelectronic|wafer|silicon|silicon carbide|photonic/.test(value)) return "Semiconductors";
+  if (/data center|server|networking|optical|fiber|power solution|cooling|ai cloud|accelerated cloud/.test(value)) return "Data Centers";
   if (/\bai\b|artificial intelligence|machine learning|analytics platform/.test(value)) return "Artificial Intelligence";
   if (/nuclear|uranium|reactor/.test(value)) return "Nuclear";
   if (/quantum/.test(value)) return "Quantum Computing";
   if (/robot|automation|autonomous|drone/.test(value)) return "Robotics & Autonomy";
   if (/crypto|bitcoin|blockchain|digital asset/.test(value)) return "Crypto";
-  if (/defense|aerospace|missile|space technology/.test(value)) return "Defense & Space";
+  if (/defense|aerospace|missile|space technology|space launch|rocket|satellite|launch services/.test(value)) return "Defense & Space";
+  if (/power infrastructure|energy infrastructure|solar|grid/.test(value)) return "Energy Infrastructure";
   if (/biotech|therapeutic|pharma|genomic|biologic/.test(value)) return "Biotechnology";
   if (/cyber|cloud|software|database|digital platform/.test(value)) return "Software & Cloud";
   return industry;
@@ -284,8 +294,21 @@ export function analyzeTightBase(
       horizontalResistance &&
       nearEmaStack &&
       notAlreadyGone;
+    const quality = clamp(
+      Number(horizontalResistance) * 18 +
+        Number(nearEmaStack) * 14 +
+        Math.min(tighteningPercent, 35) * 0.9 +
+        Math.max(0, 1 - volumeDryUpRatio) * 28 +
+        Math.max(0, 13 - rangePct) * 1.4 -
+        higherHighCount * 2 -
+        lowerLowCount * 1.5,
+      0,
+      100,
+    );
     const candidate = {
       qualified,
+      pattern: "Tight Base" as const,
+      quality,
       days,
       breakoutLevel,
       baseLow,
@@ -308,6 +331,227 @@ export function analyzeTightBase(
 
   return best ?? {
     qualified: false,
+    pattern: "Tight Base",
+    quality: 0,
+    days: 0,
+    breakoutLevel: 0,
+    baseLow: 0,
+    rangePct: 0,
+    tighteningPercent: 0,
+    volumeDryUpRatio: 1,
+    resistanceTouches: 0,
+    higherHighCount: 0,
+    lowerLowCount: 0,
+    nearEmaStack: false,
+  };
+}
+
+function analyzeBullFlag(
+  candles: DailyCandle[],
+  dailyEma8: number,
+  dailyEma21: number,
+  adrPct: number,
+): TightBaseEvidence {
+  const latest = candles.at(-1)!;
+  const price = latest.close;
+  let best: TightBaseEvidence | null = null;
+
+  for (let days = 4; days <= 14; days += 1) {
+    const flag = candles.slice(-(days + 1), -1);
+    const prior = candles.slice(-(days + 31), -(days + 1));
+    if (flag.length !== days || prior.length < 12) continue;
+    const priorLow = Math.min(...prior.map((bar) => bar.low));
+    const priorHigh = Math.max(...prior.map((bar) => bar.high));
+    const priorRunPct = (priorHigh - priorLow) / Math.max(priorLow, 0.01) * 100;
+    const flagHigh = Math.max(...flag.map((bar) => bar.high));
+    const flagLow = Math.min(...flag.map((bar) => bar.low));
+    const pullbackPct = (flagHigh - flagLow) / Math.max(flagHigh, 0.01) * 100;
+    const retraceRatio = (flagHigh - flagLow) / Math.max(priorHigh - priorLow, 0.01);
+    const highs = flag.map((bar) => bar.high);
+    const lows = flag.map((bar) => bar.low);
+    const firstHalf = flag.slice(0, Math.max(2, Math.floor(days / 2)));
+    const secondHalf = flag.slice(Math.max(2, Math.floor(days / 2)));
+    const firstRange = rangePercent(firstHalf, price);
+    const secondRange = rangePercent(secondHalf.length ? secondHalf : firstHalf, price);
+    const tighteningPercent = clamp((1 - secondRange / Math.max(firstRange, 0.01)) * 100);
+    const earlyVolume = averageVolume(firstHalf, firstHalf.length) ?? 1;
+    const lateVolume = averageVolume(secondHalf.length ? secondHalf : firstHalf, secondHalf.length || firstHalf.length) ?? earlyVolume;
+    const volumeDryUpRatio = lateVolume / Math.max(earlyVolume, 1);
+    const lowerHighs = countFallingBreaks(highs, 0.001) >= Math.max(1, Math.floor(days * 0.25));
+    const controlledPullback = retraceRatio <= 0.55 && pullbackPct <= Math.min(Math.max(adrPct * 3.1, 7), 22);
+    const heldPriorStrength = flagLow >= priorLow + (priorHigh - priorLow) * 0.45;
+    const nearEmaStack =
+      Math.abs(distancePercent(price, dailyEma8)) <= Math.max(adrPct * 2.4, 8) ||
+      Math.abs(distancePercent(price, dailyEma21)) <= Math.max(adrPct * 2.8, 9) ||
+      flagLow <= Math.max(dailyEma8, dailyEma21) * 1.08;
+    const breakoutLevel = Math.max(...highs.slice(-Math.min(days, 8)));
+    const notAlreadyGone = latest.close <= breakoutLevel * 1.09;
+    const qualified =
+      priorRunPct >= 12 &&
+      controlledPullback &&
+      heldPriorStrength &&
+      lowerHighs &&
+      volumeDryUpRatio <= 1.05 &&
+      nearEmaStack &&
+      notAlreadyGone;
+    const quality = clamp(
+      Math.min(priorRunPct, 45) * 0.8 +
+        Number(controlledPullback) * 18 +
+        Number(heldPriorStrength) * 14 +
+        Number(lowerHighs) * 12 +
+        Math.min(tighteningPercent, 30) * 0.7 +
+        Math.max(0, 1 - volumeDryUpRatio) * 22 -
+        Math.max(0, retraceRatio - 0.38) * 35,
+      0,
+      100,
+    );
+    const candidate = {
+      qualified,
+      pattern: "Bull Flag" as const,
+      quality,
+      days,
+      breakoutLevel,
+      baseLow: flagLow,
+      rangePct: pullbackPct,
+      tighteningPercent,
+      volumeDryUpRatio,
+      resistanceTouches: highs.filter((high) => high >= breakoutLevel * 0.985).length,
+      higherHighCount: countRisingBreaks(highs),
+      lowerLowCount: countFallingBreaks(lows),
+      nearEmaStack,
+      trendlineStartPrice: highs[0],
+      trendlineEndPrice: highs.at(-1),
+    };
+    if (qualified && (!best || candidate.quality > best.quality)) best = candidate;
+  }
+
+  return best ?? {
+    qualified: false,
+    pattern: "Bull Flag",
+    quality: 0,
+    days: 0,
+    breakoutLevel: 0,
+    baseLow: 0,
+    rangePct: 0,
+    tighteningPercent: 0,
+    volumeDryUpRatio: 1,
+    resistanceTouches: 0,
+    higherHighCount: 0,
+    lowerLowCount: 0,
+    nearEmaStack: false,
+  };
+}
+
+function analyzeWedgePop(
+  candles: DailyCandle[],
+  dailyEma8: number,
+  dailyEma21: number,
+  adrPct: number,
+): TightBaseEvidence {
+  const latest = candles.at(-1)!;
+  const price = latest.close;
+  let best: TightBaseEvidence | null = null;
+
+  for (let days = 5; days <= 18; days += 1) {
+    const wedge = candles.slice(-(days + 1), -1);
+    if (wedge.length !== days) continue;
+    const highs = wedge.map((bar) => bar.high);
+    const lows = wedge.map((bar) => bar.low);
+    const split = Math.max(2, Math.floor(days / 2));
+    const first = wedge.slice(0, split);
+    const second = wedge.slice(split);
+    const firstRange = rangePercent(first, price);
+    const secondRange = rangePercent(second.length ? second : first, price);
+    const tighteningPercent = clamp((1 - secondRange / Math.max(firstRange, 0.01)) * 100);
+    const firstVolume = averageVolume(first, first.length) ?? 1;
+    const secondVolume = averageVolume(second.length ? second : first, second.length || first.length) ?? firstVolume;
+    const volumeDryUpRatio = secondVolume / Math.max(firstVolume, 1);
+    const lowerHighs = countFallingBreaks(highs, 0.001) >= Math.max(2, Math.floor(days * 0.28));
+    const higherLows = countRisingBreaks(lows, 0.001) >= Math.max(1, Math.floor(days * 0.2));
+    const wedgeRange = (Math.max(...highs) - Math.min(...lows)) / Math.max(price, 0.01) * 100;
+    const descendingLine = highs[0] > highs.at(-1)!;
+    const trendlineLevel = highs.at(-1)!;
+    const nearEmaStack =
+      Math.abs(distancePercent(price, dailyEma8)) <= Math.max(adrPct * 2.6, 9) ||
+      Math.abs(distancePercent(price, dailyEma21)) <= Math.max(adrPct * 3, 10) ||
+      Math.min(...lows) <= Math.max(dailyEma8, dailyEma21) * 1.08;
+    const notAlreadyGone = latest.close <= trendlineLevel * 1.1;
+    const qualified =
+      descendingLine &&
+      lowerHighs &&
+      higherLows &&
+      tighteningPercent >= 12 &&
+      volumeDryUpRatio <= 1.08 &&
+      wedgeRange <= Math.min(Math.max(adrPct * 3.4, 8), 24) &&
+      nearEmaStack &&
+      notAlreadyGone;
+    const quality = clamp(
+      Number(descendingLine) * 16 +
+        Number(lowerHighs) * 16 +
+        Number(higherLows) * 12 +
+        Math.min(tighteningPercent, 38) * 0.9 +
+        Math.max(0, 1 - volumeDryUpRatio) * 24 +
+        Math.max(0, 22 - wedgeRange) * 0.8,
+      0,
+      100,
+    );
+    const candidate = {
+      qualified,
+      pattern: "Wedge Pop" as const,
+      quality,
+      days,
+      breakoutLevel: trendlineLevel,
+      baseLow: Math.min(...lows),
+      rangePct: wedgeRange,
+      tighteningPercent,
+      volumeDryUpRatio,
+      resistanceTouches: highs.filter((high) => high >= trendlineLevel * 0.985).length,
+      higherHighCount: countRisingBreaks(highs),
+      lowerLowCount: countFallingBreaks(lows),
+      nearEmaStack,
+      trendlineStartPrice: highs[0],
+      trendlineEndPrice: trendlineLevel,
+    };
+    if (qualified && (!best || candidate.quality > best.quality)) best = candidate;
+  }
+
+  return best ?? {
+    qualified: false,
+    pattern: "Wedge Pop",
+    quality: 0,
+    days: 0,
+    breakoutLevel: 0,
+    baseLow: 0,
+    rangePct: 0,
+    tighteningPercent: 0,
+    volumeDryUpRatio: 1,
+    resistanceTouches: 0,
+    higherHighCount: 0,
+    lowerLowCount: 0,
+    nearEmaStack: false,
+  };
+}
+
+export function analyzeLeaderPattern(
+  candles: DailyCandle[],
+  dailyEma8: number,
+  dailyEma21: number,
+  adrPct: number,
+): TightBaseEvidence {
+  const patterns = [
+    analyzeTightBase(candles, dailyEma8, dailyEma21, adrPct),
+    analyzeBullFlag(candles, dailyEma8, dailyEma21, adrPct),
+    analyzeWedgePop(candles, dailyEma8, dailyEma21, adrPct),
+  ].filter((pattern) => pattern.qualified);
+
+  return patterns.sort((left, right) => {
+    const leftHorizontalBonus = left.pattern === "Tight Base" ? 8 : 0;
+    const rightHorizontalBonus = right.pattern === "Tight Base" ? 8 : 0;
+    return (right.quality + rightHorizontalBonus) - (left.quality + leftHorizontalBonus);
+  })[0] ?? {
+    qualified: false,
+    pattern: "Tight Base",
+    quality: 0,
     days: 0,
     breakoutLevel: 0,
     baseLow: 0,
@@ -342,20 +586,20 @@ export function scoreLeaderEvidence({
   optionsTradabilityScore?: number | null;
   optionSpreadDollars?: number | null;
 }): LeaderEvidence | null {
-  if (candles.length < 205) return null;
+  if (candles.length < 90) return null;
   const latest = candles.at(-1)!;
   const previous = candles.at(-2)!;
   const closes = candles.map((bar) => bar.close);
   const weekly = weeklyCandles(candles);
   const weekCloses = weekly.map((bar) => bar.close);
-  if (weekCloses.length < 24) return null;
+  if (weekCloses.length < 12) return null;
 
   const dailyEma8 = ema(closes, 8)!;
   const dailyEma21 = ema(closes, 21)!;
   const weekEma8 = ema(weekCloses, 8)!;
-  const weekEma21 = ema(weekCloses, 21)!;
-  const priorWeekEma8 = ema(weekCloses.slice(0, -3), 8)!;
-  const priorWeekEma21 = ema(weekCloses.slice(0, -3), 21)!;
+  const weekEma21 = ema(weekCloses, 21) ?? ema(weekCloses, Math.min(weekCloses.length, 10)) ?? weekEma8;
+  const priorWeekEma8 = ema(weekCloses.slice(0, -3), 8) ?? weekEma8 * 0.99;
+  const priorWeekEma21 = ema(weekCloses.slice(0, -3), 21) ?? weekEma21 * 0.99;
   const avgVolume20 = averageVolume(candles.slice(0, -1), 20)!;
   const dollarVolume = latest.close * avgVolume20;
   const adrPct = adr(candles, 20)!;
@@ -418,6 +662,7 @@ export function scoreLeaderEvidence({
     "Robotics & Autonomy",
     "Crypto",
     "Defense & Space",
+    "Energy Infrastructure",
     "Biotechnology",
     "Software & Cloud",
   ].includes(canonicalTheme);
@@ -470,7 +715,7 @@ export function scoreLeaderEvidence({
     25,
   );
 
-  const base = analyzeTightBase(candles, dailyEma8, dailyEma21, adrPct);
+  const base = analyzeLeaderPattern(candles, dailyEma8, dailyEma21, adrPct);
   if (!base.qualified) return null;
 
   const breakout = latest.close > base.breakoutLevel && latest.close >= latest.open;
@@ -482,16 +727,20 @@ export function scoreLeaderEvidence({
   const strongGreen = latest.close > latest.open && latest.close > previous.close && closeStrength >= 0.6;
   const upperWick = (latest.high - Math.max(latest.open, latest.close)) / Math.max(latest.high - latest.low, 0.01);
   const nearPivot = latest.close >= base.breakoutLevel * 0.92 && latest.close <= base.breakoutLevel * 1.04;
-  const clearSetup = tightBase && nearPivot && !failedBreakout;
+  const horizontalPivot = base.pattern === "Tight Base";
+  const clearSetup = tightBase && nearPivot && !failedBreakout && base.quality >= 45;
   const extensionRisk = clamp(
     Math.max(0, distanceWeek8 - 12) * 3 +
       Math.max(0, distancePercent(latest.close, dailyEma8) / Math.max(adrPct, 0.1) - 1.2) * 24,
   );
   const dailySetupScore = clamp(
-    Number(latest.close > dailyEma8) * 3 +
+      Number(latest.close > dailyEma8) * 3 +
       Number(latest.close > dailyEma21) * 2 +
       Number(dailyReclaim || undercutDaily) * 1 +
-      Number(tightBase) * 6 +
+      Number(tightBase) * 5 +
+      Number(horizontalPivot) * 3 +
+      Number(base.pattern === "Bull Flag") * 2 +
+      Number(base.pattern === "Wedge Pop") * 2 +
       Number(base.tighteningPercent >= 20) * 3 +
       Number(base.volumeDryUpRatio <= 0.85) * 3 +
       Number(nearPivot) * 2 +
@@ -523,6 +772,8 @@ export function scoreLeaderEvidence({
   const extension = extensionLabel(extensionRisk);
   let setup: SetupType;
   if (extensionRisk >= 50) setup = "Extended / Wait";
+  else if (base.pattern === "Bull Flag") setup = "Bull Flag";
+  else if (base.pattern === "Wedge Pop") setup = "Wedge Pop";
   else if (breakout) setup = "Breakout";
   else if (tightBase) setup = "Tight Base";
   else setup = "Leader Pullback";
@@ -532,8 +783,13 @@ export function scoreLeaderEvidence({
   else if (failedBreakout) setupLabel = "Failed Breakout / Rejection Candle";
   else if (extensionRisk >= 50) setupLabel = "Extended Leader - Wait for Pullback";
   else if (!outperformingMarket) setupLabel = "Setup Only - Not a Leader";
+  else if (base.pattern === "Bull Flag" && breakout) setupLabel = "Bull Flag Breakout";
+  else if (base.pattern === "Wedge Pop" && breakout) setupLabel = "Descending Wedge Pop";
+  else if (base.pattern === "Tight Base" && base.quality >= 70 && strongTheme) setupLabel = "High Tight Base";
   else if (breakout && marketLeadershipScore >= 18) setupLabel = "Market Leader Breakout";
   else if (breakout && strongTheme) setupLabel = "Strong Theme Breakout";
+  else if (base.pattern === "Bull Flag") setupLabel = "Bull Flag Breakout";
+  else if (base.pattern === "Wedge Pop") setupLabel = "Descending Wedge Pop";
   else if (tightBase && strongTheme) setupLabel = "Theme Leader Reset";
   else setupLabel = "Low Quality Momentum";
 
@@ -551,8 +807,9 @@ export function scoreLeaderEvidence({
   if (!week8Rising) applyCap(60, "8-week EMA is declining");
   if (heavySellingBelowWeek8) applyCap(55, "Closed below the 8-week EMA on heavy selling");
   if (closeStrength < 0.5) applyCap(70, "Daily close finished below the candle midpoint");
-  if (!clearSetup) applyCap(72, "No clear daily or weekly setup");
-  if (!nearPivot) applyCap(64, "Price is not near the tight base breakout pivot");
+  if (!clearSetup) applyCap(72, "No clear tight base, bull flag, or downward wedge setup");
+  if (!nearPivot) applyCap(64, "Price is not near the setup breakout pivot");
+  if (base.pattern !== "Tight Base" && base.quality < 55) applyCap(74, "Flag/wedge quality is not clean enough for an A setup");
   if (!liquid || dollarVolume < 10_000_000) applyCap(68, "Poor liquidity");
 
   const finalScore = Math.min(
@@ -601,6 +858,8 @@ export function scoreLeaderEvidence({
     support,
     baseLow: base.baseLow,
     baseDays: base.days,
+    trendlineStartPrice: base.trendlineStartPrice ?? base.breakoutLevel,
+    trendlineEndPrice: base.trendlineEndPrice ?? base.breakoutLevel,
     tighteningPercent: base.tighteningPercent,
     pullbackVolumeRatio,
     bounceVolumeRatio,
@@ -610,7 +869,7 @@ export function scoreLeaderEvidence({
       `${economicLeadership.label}: ${economicLeadership.score.toFixed(1)}/15 economic leadership points${economicLeadership.reasons.length ? ` (${economicLeadership.reasons.join("; ")})` : ""}`,
       `${canonicalTheme} theme score is ${themeScore.toFixed(1)}/15 with ${peerStrengthCount} strong peer${peerStrengthCount === 1 ? "" : "s"}`,
       `Weekly structure scores ${weeklyTrendScore.toFixed(1)}/25; price is ${distanceWeek8.toFixed(1)}% from the ${week8Rising ? "rising" : "declining"} 8-week EMA`,
-      `${setupLabel}; ${base.days}-day tight base has ${base.tighteningPercent.toFixed(1)}% tightening, ${base.resistanceTouches} resistance touches, and ${base.volumeDryUpRatio.toFixed(2)}x late-base volume`,
+      `${setupLabel}; ${base.days}-day ${base.pattern.toLowerCase()} has ${base.tighteningPercent.toFixed(1)}% tightening, ${base.resistanceTouches} resistance/trendline touch${base.resistanceTouches === 1 ? "" : "es"}, and ${base.volumeDryUpRatio.toFixed(2)}x late-pattern volume`,
       `Dollar volume is $${(dollarVolume / 1_000_000).toFixed(1)}M with ${relativeVolume.toFixed(2)}x relative volume`,
     ],
   };

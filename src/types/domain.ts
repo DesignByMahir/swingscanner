@@ -1,5 +1,7 @@
 export type SetupType =
   | "Breakout"
+  | "Bull Flag"
+  | "Wedge Pop"
   | "8-Week EMA Bounce"
   | "8-Week EMA Reclaim"
   | "Leader Pullback"
@@ -13,6 +15,9 @@ export type SetupLabel =
   | "8-Week EMA Reclaim"
   | "Market Leader Breakout"
   | "Strong Theme Breakout"
+  | "Bull Flag Breakout"
+  | "Descending Wedge Pop"
+  | "High Tight Base"
   | "Leader Pullback Near 8W EMA"
   | "Extended Leader - Wait for Pullback"
   | "Setup Only - Not a Leader"

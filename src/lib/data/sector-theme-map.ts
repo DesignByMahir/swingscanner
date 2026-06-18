@@ -38,14 +38,22 @@ const sectorAliases: Record<string, [string, string]> = {
 const tickerOverrides: Record<string, [string, string, string]> = {
   AAPL: ["Technology", "XLK", "Consumer electronics"],
   AMZN: ["Consumer Discretionary", "XLY", "E-commerce and cloud"],
+  ARM: ["Technology", "XLK", "Semiconductor IP and AI compute"],
   COIN: ["Financials", "XLF", "Crypto infrastructure"],
+  CRWV: ["Technology", "XLK", "AI cloud infrastructure"],
+  FPS: ["Industrials", "XLI", "Power infrastructure"],
   GOOGL: ["Communication Services", "XLC", "Digital advertising and AI"],
+  INTC: ["Technology", "XLK", "Semiconductors"],
   META: ["Communication Services", "XLC", "Digital advertising and AI"],
+  MRVL: ["Technology", "XLK", "AI networking semiconductors"],
   MSTR: ["Technology", "XLK", "Enterprise software and crypto"],
   NFLX: ["Communication Services", "XLC", "Streaming entertainment"],
   NVDA: ["Technology", "XLK", "Semiconductors"],
   PLTR: ["Technology", "XLK", "AI software"],
+  RKLB: ["Industrials", "XLI", "Space launch and defense infrastructure"],
+  TE: ["Energy", "XLE", "Solar and energy infrastructure"],
   TSLA: ["Consumer Discretionary", "XLY", "Electric vehicles"],
+  WOLF: ["Technology", "XLK", "Silicon carbide power semiconductors"],
 };
 
 function slug(value: string) {
@@ -105,6 +113,7 @@ export function getSectorTheme(symbol: string, company = symbol, metadata: Recor
 }
 
 export const LIQUID_SCAN_PRIORITY = [
+  "WOLF", "RKLB", "TE", "MRVL", "FPS", "ARM", "CRWV", "INTC",
   "SPY", "QQQ", "AAPL", "MSFT", "NVDA", "AMZN", "GOOGL", "META", "TSLA", "AVGO",
   "AMD", "MU", "ARM", "ANET", "VRT", "PLTR", "CRWD", "PANW", "NET", "JPM",
   "GS", "BAC", "C", "COIN", "MSTR", "HOOD", "CEG", "VST", "CCJ", "ETN",
