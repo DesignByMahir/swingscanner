@@ -32,6 +32,29 @@ describe("due diligence scoring", () => {
     expect(strong).toBeGreaterThanOrEqual(70);
   });
 
+  it("treats high revenue growth as investable evidence even before full profitability", () => {
+    const growthStock = scoreFinancials({
+      profitMargin: -0.04,
+      revenueGrowth: 0.34,
+      earningsGrowth: null,
+      freeCashFlow: -150_000_000,
+      totalRevenue: 1_500_000_000,
+      currentRatio: 1.8,
+      debtToEquity: 70,
+    });
+    const stagnantProfiler = scoreFinancials({
+      profitMargin: 0.12,
+      revenueGrowth: -0.02,
+      earningsGrowth: -0.04,
+      freeCashFlow: 100_000_000,
+      totalRevenue: 2_000_000_000,
+      currentRatio: 1.1,
+      debtToEquity: 40,
+    });
+    expect(growthStock).toBeGreaterThan(stagnantProfiler!);
+    expect(growthStock).toBeGreaterThanOrEqual(55);
+  });
+
   it("uses estimates, target context, and revisions for outlook", () => {
     expect(scoreOutlook({
       forwardRevenueGrowth: 0.14,
@@ -44,6 +67,7 @@ describe("due diligence scoring", () => {
 
   it("does not invent a contracts score without coverage", () => {
     expect(scoreContracts(0, 0)).toBeNull();
+    expect(scoreContracts(0, 8)).toBeNull();
     expect(scoreContracts(2, 8)).toBe(80);
   });
 

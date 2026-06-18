@@ -37,7 +37,7 @@ async function loadLeaderboard(): Promise<DueDiligenceLeaderboard> {
 export async function getDueDiligenceLeaderboard() {
   return (
     await withCache(
-      "due-diligence:leaderboard:v1",
+      "due-diligence:leaderboard:v3",
       6 * 60 * 60 * 1000,
       loadLeaderboard,
     )

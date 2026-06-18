@@ -51,7 +51,25 @@ function history({
       volume: 2_000_000 + (index % 11) * 45_000,
     });
   }
+  const anchor = candles[248].close;
+  const pivot = anchor * 1.04;
+  const baseLow = anchor * 0.985;
+  for (let index = 249; index <= 258; index += 1) {
+    const baseIndex = index - 249;
+    const drift = baseIndex < 5 ? 0.012 : 0.004;
+    const closeOffset = [0.99, 0.985, 0.992, 0.987, 0.991, 0.988, 0.99, 0.989, 0.991, 0.99][baseIndex];
+    const closeValue = pivot * closeOffset;
+    candles[index] = {
+      ...candles[index],
+      open: closeValue * (baseIndex % 2 === 0 ? 0.996 : 1.002),
+      high: pivot * (1 - drift * (baseIndex % 3 === 0 ? 0.2 : 0.8)),
+      low: baseLow * (1 + baseIndex * 0.002),
+      close: closeValue,
+      volume: baseIndex < 5 ? 2_600_000 - baseIndex * 70_000 : 1_700_000 - baseIndex * 45_000,
+    };
+  }
   const latest = candles.at(-1)!;
+  latest.close = pivot * 0.995;
   latest.close *= finalMultiplier;
   latest.open = latest.close * (finalMultiplier < 1 ? 1.025 : 0.985);
   latest.high = Math.max(latest.open, latest.close) * 1.01;
@@ -100,7 +118,7 @@ describe("leader-first scoring", () => {
     })).toBeNull();
   });
 
-  it("keeps extended leaders visible but penalizes their daily entry quality", () => {
+  it("rejects extended leaders instead of keeping them in the scan", () => {
     const actionable = scoreLeaderEvidence({
       ticker: "ALAB",
       company: "Astera Labs",
@@ -118,11 +136,10 @@ describe("leader-first scoring", () => {
       benchmarks: neutralBenchmarks,
       sector: leadingSector,
       peerStrengthCount: 4,
-    })!;
+    });
 
     expect(actionable.setup).not.toBe("Extended / Wait");
-    expect(extended.setup).toBe("Extended / Wait");
-    expect(extended.dailySetupScore).toBeLessThanOrEqual(14);
+    expect(extended).toBeNull();
   });
 
   it("recognizes a strong semiconductor leader and keeps it eligible for a top score", () => {
@@ -149,7 +166,14 @@ describe("leader-first scoring", () => {
       company: "Slow Company",
       industry: "Consumer products",
       candles: history({ dailyGrowth: 0.0001 }),
-      benchmarks: neutralBenchmarks,
+      benchmarks: {
+        spy5: 8,
+        spy20: 18,
+        spy63: 35,
+        qqq5: 9,
+        qqq20: 22,
+        qqq63: 42,
+      },
       sector: leadingSector,
     });
     expect(evidence).not.toBeNull();

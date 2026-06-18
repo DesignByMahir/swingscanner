@@ -81,6 +81,20 @@ export interface EconomicLeadership {
   reasons: string[];
 }
 
+export interface TightBaseEvidence {
+  qualified: boolean;
+  days: number;
+  breakoutLevel: number;
+  baseLow: number;
+  rangePct: number;
+  tighteningPercent: number;
+  volumeDryUpRatio: number;
+  resistanceTouches: number;
+  higherHighCount: number;
+  lowerLowCount: number;
+  nearEmaStack: boolean;
+}
+
 const CATEGORY_LEADERS = new Set([
   "AAPL", "ABBV", "ALAB", "AMD", "AMAT", "AMZN", "ANET", "ASML", "AVGO", "BA",
   "BAC", "CAT", "CCJ", "CEG", "COP", "COST", "CRDO", "CRM", "CRWD", "CVX", "DELL", "ETN",
@@ -194,6 +208,117 @@ function rangePercent(sample: DailyCandle[], price: number) {
     price *
     100
   );
+}
+
+function countRisingBreaks(values: number[], tolerance = 0.002) {
+  return values.reduce((count, value, index) => {
+    if (index === 0) return count;
+    return value > values[index - 1] * (1 + tolerance) ? count + 1 : count;
+  }, 0);
+}
+
+function countFallingBreaks(values: number[], tolerance = 0.002) {
+  return values.reduce((count, value, index) => {
+    if (index === 0) return count;
+    return value < values[index - 1] * (1 - tolerance) ? count + 1 : count;
+  }, 0);
+}
+
+export function analyzeTightBase(
+  candles: DailyCandle[],
+  dailyEma8: number,
+  dailyEma21: number,
+  adrPct: number,
+): TightBaseEvidence {
+  const latest = candles.at(-1)!;
+  const price = candles.at(-2)?.close ?? latest.close;
+  let best: TightBaseEvidence | null = null;
+
+  for (let days = 4; days <= 15; days += 1) {
+    const base = candles.slice(-(days + 1), -1);
+    if (base.length !== days) continue;
+    const highs = base.map((bar) => bar.high);
+    const lows = base.map((bar) => bar.low);
+    const closes = base.map((bar) => bar.close);
+    const breakoutLevel = Math.max(...highs);
+    const baseLow = Math.min(...lows);
+    const rangePct = (breakoutLevel - baseLow) / Math.max(price, 0.01) * 100;
+    const split = Math.max(2, Math.floor(days / 2));
+    const first = base.slice(0, split);
+    const second = base.slice(split);
+    const firstRange = rangePercent(first, price);
+    const secondRange = rangePercent(second.length ? second : first, price);
+    const tighteningPercent = clamp((1 - secondRange / Math.max(firstRange, 0.01)) * 100);
+    const firstVolume = averageVolume(first, first.length) ?? 1;
+    const secondVolume = averageVolume(second.length ? second : first, second.length || first.length) ?? firstVolume;
+    const volumeDryUpRatio = secondVolume / Math.max(firstVolume, 1);
+    const higherHighCount = countRisingBreaks(highs);
+    const lowerLowCount = countFallingBreaks(lows);
+    const resistanceTouches = highs.filter((high) => high >= breakoutLevel * 0.975).length;
+    const lastHigh = highs.at(-1)!;
+    const firstHalfHigh = Math.max(...first.map((bar) => bar.high));
+    const lastLow = lows.at(-1)!;
+    const firstHalfLow = Math.min(...first.map((bar) => bar.low));
+    const averageClose = closes.reduce((sum, close) => sum + close, 0) / closes.length;
+    const nearEmaStack =
+      Math.abs(distancePercent(averageClose, dailyEma8)) <= Math.max(adrPct * 2.2, 7) ||
+      Math.abs(distancePercent(averageClose, dailyEma21)) <= Math.max(adrPct * 2.5, 8) ||
+      baseLow <= Math.max(dailyEma8, dailyEma21) * 1.07;
+    const tightRange = rangePct <= Math.min(Math.max(adrPct * 2.2, 5), 13);
+    const tightening = secondRange <= firstRange * 0.9 || tighteningPercent >= 10;
+    const volumeDrying = volumeDryUpRatio <= 1.02;
+    const noHigherHighs =
+      higherHighCount <= Math.max(2, Math.floor(days * 0.45)) &&
+      lastHigh <= firstHalfHigh * 1.035;
+    const noLowerLows =
+      lowerLowCount <= Math.max(2, Math.floor(days * 0.45)) &&
+      lastLow >= firstHalfLow * 0.94;
+    const horizontalResistance = resistanceTouches >= 2;
+    const notAlreadyGone = latest.close <= breakoutLevel * 1.08;
+    const qualified =
+      tightRange &&
+      tightening &&
+      volumeDrying &&
+      noHigherHighs &&
+      noLowerLows &&
+      horizontalResistance &&
+      nearEmaStack &&
+      notAlreadyGone;
+    const candidate = {
+      qualified,
+      days,
+      breakoutLevel,
+      baseLow,
+      rangePct,
+      tighteningPercent,
+      volumeDryUpRatio,
+      resistanceTouches,
+      higherHighCount,
+      lowerLowCount,
+      nearEmaStack,
+    };
+    if (
+      qualified &&
+      (!best ||
+        candidate.tighteningPercent + (1 - candidate.volumeDryUpRatio) * 100 > best.tighteningPercent + (1 - best.volumeDryUpRatio) * 100)
+    ) {
+      best = candidate;
+    }
+  }
+
+  return best ?? {
+    qualified: false,
+    days: 0,
+    breakoutLevel: 0,
+    baseLow: 0,
+    rangePct: 0,
+    tighteningPercent: 0,
+    volumeDryUpRatio: 1,
+    resistanceTouches: 0,
+    higherHighCount: 0,
+    lowerLowCount: 0,
+    nearEmaStack: false,
+  };
 }
 
 export function scoreLeaderEvidence({
@@ -345,18 +470,19 @@ export function scoreLeaderEvidence({
     25,
   );
 
-  const base10 = candles.slice(-11, -1);
-  const base20 = candles.slice(-21, -1);
-  const prior20High = Math.max(...base20.map((bar) => bar.high));
-  const breakout = latest.close > prior20High && latest.close >= latest.open;
-  const failedBreakout = latest.high > prior20High && latest.close < prior20High && closePosition(latest) < 0.45;
+  const base = analyzeTightBase(candles, dailyEma8, dailyEma21, adrPct);
+  if (!base.qualified) return null;
+
+  const breakout = latest.close > base.breakoutLevel && latest.close >= latest.open;
+  const failedBreakout = latest.high > base.breakoutLevel && latest.close < base.breakoutLevel && closePosition(latest) < 0.45;
   const dailyReclaim = previous.close < dailyEma8 && latest.close > dailyEma8;
   const undercutDaily = Math.min(...candles.slice(-5).map((bar) => bar.low)) < Math.min(dailyEma21, previous.low) && latest.close > dailyEma21;
-  const tightBase = rangePercent(base10, latest.close) <= adrPct * 3;
+  const tightBase = base.qualified;
   const closeStrength = closePosition(latest);
   const strongGreen = latest.close > latest.open && latest.close > previous.close && closeStrength >= 0.6;
   const upperWick = (latest.high - Math.max(latest.open, latest.close)) / Math.max(latest.high - latest.low, 0.01);
-  const clearSetup = breakout || bounceWeek8 || reclaimWeek8 || dailyReclaim || undercutDaily || tightBase;
+  const nearPivot = latest.close >= base.breakoutLevel * 0.92 && latest.close <= base.breakoutLevel * 1.04;
+  const clearSetup = tightBase && nearPivot && !failedBreakout;
   const extensionRisk = clamp(
     Math.max(0, distanceWeek8 - 12) * 3 +
       Math.max(0, distancePercent(latest.close, dailyEma8) / Math.max(adrPct, 0.1) - 1.2) * 24,
@@ -364,10 +490,12 @@ export function scoreLeaderEvidence({
   const dailySetupScore = clamp(
     Number(latest.close > dailyEma8) * 3 +
       Number(latest.close > dailyEma21) * 2 +
-      Number(dailyReclaim) * 3 +
-      Number(tightBase) * 3 +
+      Number(dailyReclaim || undercutDaily) * 1 +
+      Number(tightBase) * 6 +
+      Number(base.tighteningPercent >= 20) * 3 +
+      Number(base.volumeDryUpRatio <= 0.85) * 3 +
+      Number(nearPivot) * 2 +
       Number(breakout) * 4 +
-      Number(undercutDaily) * 3 +
       Number(closeStrength >= 0.6) * 2 +
       Number(strongGreen) * 2 -
       Number(failedBreakout) * 6 -
@@ -396,9 +524,6 @@ export function scoreLeaderEvidence({
   let setup: SetupType;
   if (extensionRisk >= 50) setup = "Extended / Wait";
   else if (breakout) setup = "Breakout";
-  else if (reclaimWeek8) setup = "8-Week EMA Reclaim";
-  else if (bounceWeek8) setup = "8-Week EMA Bounce";
-  else if (undercutDaily) setup = "Undercut and Reclaim";
   else if (tightBase) setup = "Tight Base";
   else setup = "Leader Pullback";
 
@@ -409,10 +534,7 @@ export function scoreLeaderEvidence({
   else if (!outperformingMarket) setupLabel = "Setup Only - Not a Leader";
   else if (breakout && marketLeadershipScore >= 18) setupLabel = "Market Leader Breakout";
   else if (breakout && strongTheme) setupLabel = "Strong Theme Breakout";
-  else if (reclaimWeek8) setupLabel = "8-Week EMA Reclaim";
-  else if (bounceWeek8 && strongTheme) setupLabel = "Theme Leader Reset";
-  else if (bounceWeek8) setupLabel = "8-Week EMA Bounce";
-  else if (touchedWeek8) setupLabel = "Leader Pullback Near 8W EMA";
+  else if (tightBase && strongTheme) setupLabel = "Theme Leader Reset";
   else setupLabel = "Low Quality Momentum";
 
   let scoreCap = 100;
@@ -430,6 +552,7 @@ export function scoreLeaderEvidence({
   if (heavySellingBelowWeek8) applyCap(55, "Closed below the 8-week EMA on heavy selling");
   if (closeStrength < 0.5) applyCap(70, "Daily close finished below the candle midpoint");
   if (!clearSetup) applyCap(72, "No clear daily or weekly setup");
+  if (!nearPivot) applyCap(64, "Price is not near the tight base breakout pivot");
   if (!liquid || dollarVolume < 10_000_000) applyCap(68, "Poor liquidity");
 
   const finalScore = Math.min(
@@ -441,14 +564,7 @@ export function scoreLeaderEvidence({
       dailySetupScore +
       tradabilityScore,
   );
-  const support = Math.max(
-    Math.min(...recentFive.map((bar) => bar.low)),
-    Math.min(weekEma8, dailyEma21),
-  );
-  const baseLow = Math.min(...base10.map((bar) => bar.low));
-  const earlierRange = rangePercent(candles.slice(-20, -10), latest.close);
-  const recentRange = rangePercent(base10, latest.close);
-  const tighteningPercent = clamp((1 - recentRange / Math.max(earlierRange, 0.01)) * 100);
+  const support = Math.max(base.baseLow, Math.min(weekEma8, dailyEma21));
 
   return {
     setup,
@@ -481,11 +597,11 @@ export function scoreLeaderEvidence({
     extension,
     setupQuality: dailySetupScore / 20 * 100,
     dailyClosePosition: closeStrength,
-    breakoutLevel: Math.max(prior20High, latest.high),
+    breakoutLevel: base.breakoutLevel,
     support,
-    baseLow,
-    baseDays: 10,
-    tighteningPercent,
+    baseLow: base.baseLow,
+    baseDays: base.days,
+    tighteningPercent: base.tighteningPercent,
     pullbackVolumeRatio,
     bounceVolumeRatio,
     heavySellingBelowWeek8,
@@ -494,7 +610,7 @@ export function scoreLeaderEvidence({
       `${economicLeadership.label}: ${economicLeadership.score.toFixed(1)}/15 economic leadership points${economicLeadership.reasons.length ? ` (${economicLeadership.reasons.join("; ")})` : ""}`,
       `${canonicalTheme} theme score is ${themeScore.toFixed(1)}/15 with ${peerStrengthCount} strong peer${peerStrengthCount === 1 ? "" : "s"}`,
       `Weekly structure scores ${weeklyTrendScore.toFixed(1)}/25; price is ${distanceWeek8.toFixed(1)}% from the ${week8Rising ? "rising" : "declining"} 8-week EMA`,
-      `${setupLabel}; daily setup quality is ${dailySetupScore.toFixed(1)}/20`,
+      `${setupLabel}; ${base.days}-day tight base has ${base.tighteningPercent.toFixed(1)}% tightening, ${base.resistanceTouches} resistance touches, and ${base.volumeDryUpRatio.toFixed(2)}x late-base volume`,
       `Dollar volume is $${(dollarVolume / 1_000_000).toFixed(1)}M with ${relativeVolume.toFixed(2)}x relative volume`,
     ],
   };

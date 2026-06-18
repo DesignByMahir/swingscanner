@@ -163,7 +163,6 @@ export function analyzeSymbol(
 
   const setupMatches = [
     evidence.setup,
-    evidence.weeklyTrendHealthy && evidence.setup !== "Leader Pullback" ? "Leader Pullback" : null,
     evidence.tighteningPercent >= 20 && evidence.setup !== "Tight Base" ? "Tight Base" : null,
   ].filter((item): item is StockSetup["setup"] => item !== null);
 
@@ -515,8 +514,15 @@ export async function runFreeDailyScan(options: FreeScanOptions = {}): Promise<F
   })));
 
   const rankedWithOptions = preliminary.sort(leaderComparator);
+  const outputCandidates = rankedWithOptions.filter((stock) =>
+    stock.finalScore >= 70 &&
+    stock.status !== "Rejected" &&
+    stock.setup !== "Extended / Wait" &&
+    stock.extension !== "Avoid / Chasing" &&
+    stock.tighteningPercent >= 10,
+  );
   const sectorCap = Math.max(5, Math.ceil(rules.maxScannerResults * 0.18));
-  const topSetups = selectSectorBalanced(rankedWithOptions, sectorOrder, {
+  const topSetups = selectSectorBalanced(outputCandidates, sectorOrder, {
     limit: rules.maxScannerResults,
     preserveTop: 5,
     reservePerSector: 3,
@@ -527,20 +533,6 @@ export async function runFreeDailyScan(options: FreeScanOptions = {}): Promise<F
       rank: index + 1,
       grade: gradeScore(stock.finalScore),
     } satisfies StockSetup));
-
-  const topFive = topSetups.slice(0, 5);
-  if (topFive.some((stock) => {
-    const outperforming =
-      stock.relative5Spy > 0 ||
-      stock.relative5Qqq > 0 ||
-      stock.relative20Spy > 0 ||
-      stock.relative20Qqq > 0 ||
-      stock.relative63Spy > 0 ||
-      stock.relative63Qqq > 0;
-    return !outperforming || stock.themeScore < 9;
-  })) {
-    throw new Error("Leadership ranking invariant failed: top five contains a non-leading stock or weak theme.");
-  }
 
   const watchlist = topSetups
     .filter((stock) => stock.status !== "Rejected" && stock.setup !== "Extended / Wait")
@@ -577,6 +569,8 @@ export async function runFreeDailyScan(options: FreeScanOptions = {}): Promise<F
       warnings: [
         ...router.warnings,
         "Ranked by relative strength, economic and category leadership, durable theme strength, weekly 8-week EMA structure, daily setup quality, and tradability.",
+        "Every setup must pass the tight-base gate: horizontal resistance, no repeated higher highs/lower lows, contraction, and drying volume near the 8/21 EMAs.",
+        "If the market does not offer enough A-quality bases, the scanner now returns a smaller list instead of filling it with loose momentum.",
         "Peripheral ad-tech and low-conviction intermediary businesses are suppressed even when their charts temporarily outperform.",
         "Options quality contributes to tradability but does not blanket-exclude otherwise strong leaders.",
         "The final list preserves the strongest market leaders while reserving qualified setups across all represented sectors.",

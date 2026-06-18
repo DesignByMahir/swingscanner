@@ -1,7 +1,7 @@
 import YahooFinance from "yahoo-finance2";
 import { withCache } from "@/lib/data/cache";
 import { ProviderRouter } from "@/lib/data/provider-router";
-import { getSectorMetadataMap, getSectorTheme } from "@/lib/data/sector-theme-map";
+import { getSectorMetadataMap, getSectorTheme, SECTOR_NAMES } from "@/lib/data/sector-theme-map";
 import {
   aggregateDueDiligenceScore,
   scoreContracts,
@@ -20,6 +20,9 @@ import type {
 
 const yahooFinance = new YahooFinance({ suppressNotices: ["yahooSurvey"] });
 const contractPattern = /\b(contract|award|order|backlog|partnership|agreement|deal|supplier|selected|procurement)\b/i;
+const sectorTickerByName = Object.fromEntries(
+  Object.entries(SECTOR_NAMES).map(([ticker, sector]) => [sector, ticker]),
+);
 
 function numberOrNull(value: unknown) {
   return typeof value === "number" && Number.isFinite(value) ? value : null;
@@ -124,7 +127,9 @@ async function loadDueDiligence(rawTicker: string): Promise<DueDiligenceResult> 
   const industry = isFundLike
     ? fundCategory ?? summary?.fundProfile?.legalType ?? instrumentType
     : profile?.industryDisp ?? profile?.industry ?? mapped.theme;
-  const sectorTicker = isFundLike ? ticker.replaceAll("-", ".") : mapped.sectorTicker;
+  const sectorTicker = isFundLike
+    ? ticker.replaceAll("-", ".")
+    : sectorTickerByName[sector] ?? mapped.sectorTicker;
 
   const router = new ProviderRouter({ enableYahooFallback: true, dailyCacheHours: 6 });
   const [instrumentHistory, spyHistory, sectorHistory] = await Promise.all([
@@ -215,7 +220,7 @@ async function loadDueDiligence(rawTicker: string): Promise<DueDiligenceResult> 
       id: "financials",
       label: "Financials",
       score: financialScore,
-      weight: 35,
+      weight: 45,
       summary: financialScore === null
         ? "Company financial statements are not applicable or unavailable for this instrument."
         : `${percentDisplay(profitMargin)} profit margin with ${percentDisplay(revenueGrowth)} reported revenue growth.`,
@@ -229,7 +234,7 @@ async function loadDueDiligence(rawTicker: string): Promise<DueDiligenceResult> 
       id: "outlook",
       label: "Outlook",
       score: outlookScore,
-      weight: 30,
+      weight: 35,
       summary: isFundLike
         ? `${percentDisplay(threeYearAverageReturn)} three-year and ${percentDisplay(fiveYearAverageReturn)} five-year average return.`
         : `${percentDisplay(forwardRevenueGrowth)} estimated revenue growth and ${percentDisplay(forwardEarningsGrowth)} estimated EPS growth.`,
@@ -247,7 +252,7 @@ async function loadDueDiligence(rawTicker: string): Promise<DueDiligenceResult> 
       id: "contracts",
       label: "Contracts",
       score: contractsScore,
-      weight: 15,
+      weight: 5,
       summary: !isEquity
         ? "Company contract scoring is not applicable to this instrument."
         : contractNews.length
@@ -263,7 +268,7 @@ async function loadDueDiligence(rawTicker: string): Promise<DueDiligenceResult> 
       id: "sector",
       label: "Sector",
       score: sectorScore,
-      weight: 20,
+      weight: 15,
       summary: `${sector} / ${industry}; ${sectorTicker} is the comparison benchmark.`,
       evidence: [
         sectorRelative === null ? "Sector-relative 63-day performance is unavailable." : `${sectorTicker} is ${sectorRelative.toFixed(1)} percentage points versus SPY over 63 sessions.`,
@@ -312,6 +317,7 @@ async function loadDueDiligence(rawTicker: string): Promise<DueDiligenceResult> 
   const metrics = isFundLike ? fundMetrics : companyMetrics;
   const warnings = [
     "Scores summarize available public data and are not a valuation model or investment recommendation.",
+    "The stock model is shares-first: revenue growth, forward growth, profitability trajectory, balance sheet, and sector context carry the score.",
     ...(instrumentType !== "EQUITY" ? ["Company financial metrics are not scored for ETFs, funds, or indices."] : []),
     ...(contractNews.length ? ["Contract signals are based on linked headlines; open the source before relying on the claim."] : []),
   ];
@@ -342,7 +348,7 @@ async function loadDueDiligence(rawTicker: string): Promise<DueDiligenceResult> 
 export async function researchDueDiligence(ticker: string) {
   const normalized = ticker.trim().toUpperCase();
   const cached = await withCache(
-    `due-diligence:${normalized}`,
+    `due-diligence:v3:${normalized}`,
     6 * 60 * 60 * 1000,
     () => loadDueDiligence(normalized),
   );

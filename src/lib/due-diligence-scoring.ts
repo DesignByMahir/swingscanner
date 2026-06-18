@@ -33,17 +33,26 @@ function averageAvailable(values: Array<number | null>) {
     : null;
 }
 
+function weightedAverageAvailable(values: Array<{ value: number | null; weight: number }>) {
+  const available = values.filter((item): item is { value: number; weight: number } =>
+    item.value !== null && Number.isFinite(item.value),
+  );
+  if (!available.length) return null;
+  const weight = available.reduce((sum, item) => sum + item.weight, 0);
+  return available.reduce((sum, item) => sum + item.value * item.weight, 0) / weight;
+}
+
 export function scoreFinancials(input: FundamentalScoreInput) {
   const freeCashFlowMargin = input.freeCashFlow !== null && input.totalRevenue
     ? input.freeCashFlow / input.totalRevenue
     : null;
-  const score = averageAvailable([
-    input.profitMargin === null ? null : clamp((input.profitMargin + 0.05) * 285),
-    input.revenueGrowth === null ? null : clamp((input.revenueGrowth + 0.05) * 285),
-    input.earningsGrowth === null ? null : clamp((input.earningsGrowth + 0.05) * 240),
-    freeCashFlowMargin === null ? null : clamp((freeCashFlowMargin + 0.02) * 400),
-    input.currentRatio === null ? null : clamp(input.currentRatio * 55),
-    input.debtToEquity === null ? null : clamp(100 - Math.max(0, input.debtToEquity - 25) * 0.65),
+  const score = weightedAverageAvailable([
+    { value: input.revenueGrowth === null ? null : clamp((input.revenueGrowth + 0.03) * 260), weight: 30 },
+    { value: input.earningsGrowth === null ? null : clamp((input.earningsGrowth + 0.08) * 210), weight: 18 },
+    { value: input.profitMargin === null ? null : clamp(45 + input.profitMargin * 180), weight: 18 },
+    { value: freeCashFlowMargin === null ? null : clamp(45 + freeCashFlowMargin * 260), weight: 14 },
+    { value: input.currentRatio === null ? null : clamp(input.currentRatio * 45), weight: 8 },
+    { value: input.debtToEquity === null ? null : clamp(92 - Math.max(0, input.debtToEquity - 40) * 0.45), weight: 12 },
   ]);
   return score === null ? null : Math.round(score);
 }
@@ -53,11 +62,11 @@ export function scoreOutlook(input: OutlookScoreInput) {
   const revisionScore = revisionTotal
     ? clamp(50 + ((input.upwardRevisions - input.downwardRevisions) / revisionTotal) * 50)
     : null;
-  const score = averageAvailable([
-    input.forwardRevenueGrowth === null ? null : clamp((input.forwardRevenueGrowth + 0.05) * 285),
-    input.forwardEarningsGrowth === null ? null : clamp((input.forwardEarningsGrowth + 0.05) * 240),
-    input.analystUpside === null ? null : clamp(50 + input.analystUpside * 250),
-    revisionScore,
+  const score = weightedAverageAvailable([
+    { value: input.forwardRevenueGrowth === null ? null : clamp((input.forwardRevenueGrowth + 0.05) * 320), weight: 35 },
+    { value: input.forwardEarningsGrowth === null ? null : clamp((input.forwardEarningsGrowth + 0.08) * 260), weight: 25 },
+    { value: revisionScore, weight: 20 },
+    { value: input.analystUpside === null ? null : clamp(50 + input.analystUpside * 160), weight: 20 },
   ]);
   return score === null ? null : Math.round(score);
 }
@@ -77,7 +86,7 @@ export function scoreContracts(contractHeadlineCount: number, relevantHeadlineCo
   if (contractHeadlineCount >= 3) return 90;
   if (contractHeadlineCount === 2) return 80;
   if (contractHeadlineCount === 1) return 68;
-  return 42;
+  return null;
 }
 
 export function scoreSector(relative63Day: number | null, above200Day: boolean | null) {
