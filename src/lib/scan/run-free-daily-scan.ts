@@ -45,24 +45,6 @@ interface CandidateHistory {
   candles: DailyCandle[];
 }
 
-const MARKET_LEADER_CALIBRATION_BY_DATE: Record<string, Record<string, {
-  setup: StockSetup["setup"];
-  score: number;
-  label: StockSetup["setupLabel"];
-  company: string;
-}>> = {
-  "2026-06-17": {
-    WOLF: { setup: "Wedge Pop", score: 91, label: "Descending Wedge Pop", company: "Wolfspeed, Inc." },
-    RKLB: { setup: "Bull Flag", score: 92, label: "Bull Flag Breakout", company: "Rocket Lab Corporation" },
-    TE: { setup: "Wedge Pop", score: 88, label: "Descending Wedge Pop", company: "T1 Energy Inc." },
-    MRVL: { setup: "Bull Flag", score: 94, label: "Bull Flag Breakout", company: "Marvell Technology, Inc." },
-    FPS: { setup: "Bull Flag", score: 90, label: "Bull Flag Breakout", company: "Forgent Power Solutions, Inc." },
-    ARM: { setup: "Breakout", score: 95, label: "Market Leader Breakout", company: "Arm Holdings plc" },
-    CRWV: { setup: "Breakout", score: 96, label: "Market Leader Breakout", company: "CoreWeave, Inc." },
-    INTC: { setup: "Bull Flag", score: 89, label: "Bull Flag Breakout", company: "Intel Corporation" },
-  },
-};
-
 function buildTradePlan(price: number, evidence: LeaderEvidence, candles: DailyCandle[]) {
   const latest = candles.at(-1)!;
   const adrDollars = price * (candles.slice(-20).reduce(
@@ -118,157 +100,6 @@ function buildTradePlan(price: number, evidence: LeaderEvidence, candles: DailyC
       ? `Wait for price to move closer to the 8-week EMA; it is currently ${evidence.distanceWeek8.toFixed(1)}% above it`
       : `Avoid an entry more than ${adrDollars.toFixed(2)} above the trigger`,
     invalidation: `A decisive close below weekly support near ${evidence.weekEma8.toFixed(2)} invalidates the long setup`,
-  };
-}
-
-function buildCalibrationSetup({
-  symbol,
-  candles,
-  benchmarks,
-  sectorMetadata,
-  sectorContexts,
-  calibration,
-}: {
-  symbol: UniverseSymbol;
-  candles: DailyCandle[];
-  benchmarks: BenchmarkReturns;
-  sectorMetadata: Record<string, SectorMetadata>;
-  sectorContexts: Map<string, SectorContext>;
-  calibration: typeof MARKET_LEADER_CALIBRATION_BY_DATE[string][string];
-}): StockSetup {
-  const latest = candles.at(-1)!;
-  const closes = candles.map((bar) => bar.close);
-  const recent = candles.slice(-12);
-  const previousBase = candles.slice(-13, -1);
-  const avgVolume = averageVolume(candles.slice(0, -1), Math.min(20, candles.length - 1)) ?? latest.volume;
-  const relativeVolume = latest.volume / Math.max(avgVolume, 1);
-  const adrPct = recent.reduce(
-    (sum, bar) => sum + ((bar.high - bar.low) / Math.max(bar.close, 0.01)) * 100,
-    0,
-  ) / Math.max(recent.length, 1);
-  const ema8Value = ema(closes, 8) ?? latest.close;
-  const ema21Value = ema(closes, 21) ?? ema8Value;
-  const ema50Value = ema(closes, 50) ?? ema21Value;
-  const metadata = getSectorTheme(symbol.symbol, symbol.name, sectorMetadata);
-  const sectorContext = sectorContexts.get(metadata.sectorTicker) ?? {
-    score: 50,
-    rank: 99,
-    change1d: 0,
-    change5d: 0,
-    change20d: 0,
-    relative20d: 0,
-  };
-  const breakoutLevel = Math.max(...previousBase.map((bar) => bar.high));
-  const baseLow = Math.min(...previousBase.map((bar) => bar.low));
-  const priorHigh = previousBase[0]?.high ?? breakoutLevel;
-  const lastSetupHigh = previousBase.at(-1)?.high ?? breakoutLevel;
-  const relative5Spy = changePercent(closes, 5) - benchmarks.spy5;
-  const relative5Qqq = changePercent(closes, 5) - benchmarks.qqq5;
-  const relative20Spy = changePercent(closes, 20) - benchmarks.spy20;
-  const relative20Qqq = changePercent(closes, 20) - benchmarks.qqq20;
-  const relative63Spy = changePercent(closes, 63) - benchmarks.spy63;
-  const relative63Qqq = changePercent(closes, 63) - benchmarks.qqq63;
-  const plan: TradePlan = {
-    bias: `${calibration.label}; date-limited calibration leader for ${latest.date}`,
-    tactic: "Breakout",
-    breakoutLevel: Number(breakoutLevel.toFixed(2)),
-    alternateTrigger: Number(latest.high.toFixed(2)),
-    baseLow: Number(baseLow.toFixed(2)),
-    baseDays: previousBase.length,
-    tighteningPercent: 25,
-    trendlineStartDate: previousBase[0]?.date ?? latest.date,
-    trendlineStartPrice: Number(priorHigh.toFixed(2)),
-    trendlineEndDate: latest.date,
-    trendlineEndPrice: Number(lastSetupHigh.toFixed(2)),
-    entryLow: Number(breakoutLevel.toFixed(2)),
-    entryHigh: Number((breakoutLevel + latest.close * adrPct / 100 * 0.2).toFixed(2)),
-    trigger: `Calibration setup: confirm ${symbol.symbol} over ${breakoutLevel.toFixed(2)} with strong relative strength and clean volume`,
-    confirmation: "Confirm on a completed daily close; this calibration item should be reviewed visually before entry",
-    stopRule: "After entry, use the trigger day's low or the nearby support shelf as the stop reference",
-    target1: Number((breakoutLevel + (breakoutLevel - baseLow) * 0.5).toFixed(2)),
-    target2: Number((breakoutLevel + (breakoutLevel - baseLow)).toFixed(2)),
-    timeframe: `${calibration.setup} within a theme-leading market leader`,
-    avoid: `Avoid chasing more than one ADR above ${breakoutLevel.toFixed(2)}`,
-    invalidation: `A decisive close below ${baseLow.toFixed(2)} damages the setup`,
-  };
-
-  return {
-    rank: 0,
-    ticker: symbol.symbol,
-    company: calibration.company,
-    sector: metadata.sector,
-    sectorTicker: metadata.sectorTicker,
-    sectorRank: sectorContext.rank,
-    theme: metadata.theme,
-    themeSlug: metadata.themeSlug,
-    canonicalTheme: metadata.theme,
-    price: Number(latest.close.toFixed(2)),
-    change: Number(changePercent(closes, 1).toFixed(2)),
-    adr: Number(adrPct.toFixed(2)),
-    avgVolume: Math.round(avgVolume),
-    relativeVolume: Number(relativeVolume.toFixed(2)),
-    marketCap: null,
-    marketCapUnavailable: true,
-    analystRating: null,
-    analystScore: null,
-    optionsAvailable: false,
-    optionExpiration: null,
-    optionDte: null,
-    optionIv: null,
-    optionSpreadDollars: null,
-    optionSpreadPct: null,
-    optionOpenInterest: null,
-    optionVolume: null,
-    optionsTradabilityScore: null,
-    rsi: Number((rsi(closes, 14) ?? 50).toFixed(1)),
-    distance8: Number(distancePercent(latest.close, ema8Value).toFixed(2)),
-    distance21: Number(distancePercent(latest.close, ema21Value).toFixed(2)),
-    distance50: Number(distancePercent(latest.close, ema50Value).toFixed(2)),
-    rs: Math.min(100, Math.max(80, Math.round((Math.max(relative5Spy, relative20Spy, relative63Spy, 0) / 20) * 100))),
-    setupLabel: calibration.label,
-    relative5Spy: Number(relative5Spy.toFixed(2)),
-    relative5Qqq: Number(relative5Qqq.toFixed(2)),
-    relative20Spy: Number(relative20Spy.toFixed(2)),
-    relative20Qqq: Number(relative20Qqq.toFixed(2)),
-    relative63Spy: Number(relative63Spy.toFixed(2)),
-    relative63Qqq: Number(relative63Qqq.toFixed(2)),
-    weekEma8: Number((ema(closes, 40) ?? ema21Value).toFixed(2)),
-    weekEma21: Number((ema(closes, 100) ?? ema50Value).toFixed(2)),
-    distanceWeek8: Number(distancePercent(latest.close, ema(closes, 40) ?? ema21Value).toFixed(2)),
-    weeklyTrendHealthy: latest.close > (ema(closes, 40) ?? ema21Value),
-    themeScore: Math.max(11, sectorContext.score / 10),
-    peerStrengthCount: 2,
-    scoreCap: 100,
-    capReasons: [],
-    setup: calibration.setup,
-    matchedSetups: [...new Set([calibration.setup, calibration.setup === "Breakout" ? "Tight Base" : null].filter(Boolean))] as StockSetup["setup"][],
-    setupQuality: 95,
-    extensionRisk: 10,
-    extension: "Clean",
-    finalScore: calibration.score,
-    grade: gradeScore(calibration.score),
-    status: "Actionable",
-    earningsDays: 999,
-    tighteningPercent: 25,
-    scoreParts: [
-      { label: "Market leadership / RS", value: 95, weight: 20 },
-      { label: "Economic / category leadership", value: 95, weight: 15 },
-      { label: "Theme / sector strength", value: 90, weight: 15 },
-      { label: "Weekly trend / 8W EMA", value: 85, weight: 25 },
-      { label: "Daily setup quality", value: 95, weight: 20 },
-      { label: "Volume / tradability", value: 80, weight: 10 },
-    ],
-    reasons: [
-      "Date-limited calibration leader supplied for 2026-06-17 so today's scan matches the manually reviewed A-list.",
-      `${symbol.symbol} is being used as a training example for future scans: economy-leading theme, strong relative strength, and a flag/base/wedge breakout structure.`,
-      `Relative performance vs SPY: ${relative5Spy.toFixed(1)}% over 5D, ${relative20Spy.toFixed(1)}% over 20D, ${relative63Spy.toFixed(1)}% over 3M.`,
-    ],
-    warnings: [
-      "Calibration entry is date-limited and should be visually confirmed on the chart; future scans must qualify through the normal leader/setup engine.",
-      "Market capitalization and institutional ownership are unavailable from free EOD candle sources.",
-      "Usable 21-60 DTE options data was unavailable until the options confluence pass completes.",
-    ],
-    plan,
   };
 }
 
@@ -638,36 +469,6 @@ export async function runFreeDailyScan(options: FreeScanOptions = {}): Promise<F
   })));
 
   const marketDate = spy.candles.at(-1)!.date;
-  const calibrationForDate = MARKET_LEADER_CALIBRATION_BY_DATE[marketDate] ?? {};
-  const universeBySymbol = new Map(universeResult.value.map((symbol) => [symbol.symbol, symbol]));
-  const historySymbols = new Set(histories.map((history) => history.symbol.symbol));
-  await Promise.all(Object.entries(calibrationForDate).map(([ticker, calibration]) => detailLimit(async () => {
-    if (historySymbols.has(ticker)) return;
-    try {
-      const result = await router.getDaily(ticker, 300);
-      if (!result.candles) {
-        failures.push({ symbol: ticker, reason: "No valid calibration daily candle history" });
-        return;
-      }
-      histories.push({
-        symbol: universeBySymbol.get(ticker) ?? {
-          symbol: ticker,
-          name: calibration.company,
-          exchange: "",
-          isETF: false,
-          isTestIssue: false,
-          source: "nasdaqtrader",
-        },
-        candles: result.candles,
-      });
-      historySymbols.add(ticker);
-    } catch (error) {
-      failures.push({
-        symbol: ticker,
-        reason: error instanceof Error ? error.message : "Unknown calibration provider error",
-      });
-    }
-  })));
 
   const initialCandidates = histories.flatMap(({ symbol, candles }) => {
     const analyzed = analyzeSymbol(
@@ -706,17 +507,6 @@ export async function runFreeDailyScan(options: FreeScanOptions = {}): Promise<F
       sectorContexts,
       peerCount,
     );
-    const calibration = calibrationForDate[symbol.symbol];
-    if (calibration && (!analyzed || analyzed.finalScore < calibration.score)) {
-      return [buildCalibrationSetup({
-          symbol,
-          candles,
-          benchmarks,
-          sectorMetadata,
-          sectorContexts,
-          calibration,
-        })];
-    }
     return analyzed ? [analyzed] : [];
   });
 
@@ -742,20 +532,12 @@ export async function runFreeDailyScan(options: FreeScanOptions = {}): Promise<F
     stock.tighteningPercent >= 10,
   );
   const sectorCap = Math.max(5, Math.ceil(rules.maxScannerResults * 0.18));
-  const calibrationOrder = new Map(Object.keys(calibrationForDate).map((ticker, index) => [ticker, index]));
   const selectedSetups = selectSectorBalanced(outputCandidates, sectorOrder, {
     limit: rules.maxScannerResults,
     preserveTop: 5,
     reservePerSector: 3,
     maxPerSector: sectorCap,
-  }).sort((left, right) => {
-    const leftCalibration = calibrationOrder.get(left.ticker);
-    const rightCalibration = calibrationOrder.get(right.ticker);
-    if (leftCalibration != null || rightCalibration != null) {
-      return (leftCalibration ?? 999) - (rightCalibration ?? 999);
-    }
-    return leaderComparator(left, right);
-  });
+  }).sort(leaderComparator);
   const topSetups = selectedSetups
     .map((stock, index) => ({
       ...stock,
@@ -800,9 +582,6 @@ export async function runFreeDailyScan(options: FreeScanOptions = {}): Promise<F
         "Ranked by relative strength, economic and category leadership, durable theme strength, weekly 8-week EMA structure, daily setup quality, and tradability.",
         "Every setup must pass a leader setup gate: tight horizontal base, bull flag, or downward wedge pop with contraction/drying volume near key moving averages.",
         "If the market does not offer enough A-quality leaders, the scanner returns a smaller list instead of filling it with loose momentum.",
-        ...(Object.keys(calibrationForDate).length
-          ? [`${marketDate} includes a date-limited manual calibration list so future scans can be tuned against today's reviewed market leaders.`]
-          : []),
         "Peripheral ad-tech and low-conviction intermediary businesses are suppressed even when their charts temporarily outperform.",
         "Options quality contributes to tradability but does not blanket-exclude otherwise strong leaders.",
         "The final list preserves the strongest market leaders while reserving qualified setups across all represented sectors.",
